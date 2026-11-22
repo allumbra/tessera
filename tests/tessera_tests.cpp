@@ -625,13 +625,16 @@ private slots:
         QCOMPARE(rig.game->pieceModel().rowCount(), 0);
     }
 
-    void pilesFallBackToTheFocusedWindowOnlyWhenItsAPiece() {
+    void pilesAreOnlyMadeOnAFocusedPiece() {
         Rig rig(true);
         QVERIFY(rig.waitFor("menu"));
-        rig.desktop.groupTakesWindow = false;
         rig.game->playLesson(5);
         rig.game->begin();
         QVERIFY2(rig.deal(), qPrintable(rig.game->error()));
+        // The address form isn't trusted (if Hyprland ignored the window, the
+        // player's focused window would be grouped), so it never runs.
+        QCOMPARE(rig.desktop.dispatched.indexOf(QRegularExpression("^group [^-].*")), -1);
+        QCOMPARE(rig.desktop.dispatched.indexOf(QRegularExpression("^intogroup [lrud] .*")), -1);
         // The focused-window form ran, and only on a piece.
         const int groupAt = rig.desktop.dispatched.indexOf(QRegularExpression("^group-focused .*"));
         QVERIFY2(groupAt >= 0, qPrintable(rig.desktop.dispatched.join(", ")));

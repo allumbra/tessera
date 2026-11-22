@@ -177,6 +177,7 @@ private:
     QJsonObject client(const QString &address) const;
     QString pieceAt(const QString &address) const;
     bool ownPiece(const QString &id, QString *address); // the only gate to a dispatch
+    bool focusOwnPiece(const QString &id, QString *error);
     QString chord(const QString &action) const;
     QString pieceName(const QString &id) const;
     QString pictureTitle(int picture) const;

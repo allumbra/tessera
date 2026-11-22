@@ -616,6 +616,20 @@ bool Game::ownPiece(const QString &id, QString *address) {
     return true;
 }
 
+// Focuses one of the game's own pieces and confirms Hyprland agrees, for the
+// dispatchers that only act on whatever has focus.
+bool Game::focusOwnPiece(const QString &id, QString *error) {
+    QString address;
+    if (!ownPiece(id, &address))
+        return false;
+    auto active = [this] {
+        return Hypr::address(m_hyprctl->query("activewindow").toObject().value("address").toString());
+    };
+    if (active() == address)
+        return true;
+    return m_hyprctl->focusWindow(address, error) && active() == address;
+}
+
 // ── Setting up ────────────────────────────────────────────────────────────
 
 // Omarchy gives each monitor its own ten workspaces, block * 10 + 1 to
@@ -859,30 +873,23 @@ void Game::runNext() {
         break;
     }
     case Action::PileStart: {
+        // Hyprland's group dispatchers act on the focused window, and Omarchy
+        // never passes them a window, so a "window =" argument isn't trusted:
+        // if it were ignored, the player's own window would be grouped. The
+        // pile is only made once Hyprland says focus is on this very piece.
         auto grouped = [=](const QJsonObject &c) { return groupOf(c).contains(address); };
-        // The fallback dispatcher acts on the focused window, so it only
-        // runs once Hyprland says focus is on this very piece.
-        auto fallback = [=] {
-            QString e;
-            const QString focused = Hypr::address(m_hyprctl->query("activewindow").toObject().value("address").toString());
-            if (focused != address && (!m_hyprctl->focusWindow(address, &e)
-                    || Hypr::address(m_hyprctl->query("activewindow").toObject().value("address").toString()) != address))
-                return fail(tr("Couldn't stack the pile: %1 wouldn't take focus. Press R to try again.").arg(pieceName(a.piece)));
-            QString owned;
-            if (!ownPiece(a.piece, &owned) || !m_hyprctl->toggleFocusedGroup(&e))
-                return fail(tr("Couldn't stack the pile: %1. Press R to try again.").arg(e));
-            afterSettle([=] { verify(a.piece, grouped, tr("Making a pile")); });
-        };
-        if (!m_hyprctl->toggleGroup(address, &error)) {
-            fallback();
-            return;
-        }
-        afterSettle([=] { verify(a.piece, grouped, tr("Making a pile"), fallback); });
+        QString e;
+        if (!focusOwnPiece(a.piece, &e))
+            return fail(tr("Couldn't stack the pile: %1 wouldn't take focus. Press R to try again.").arg(pieceName(a.piece)));
+        if (!m_hyprctl->toggleFocusedGroup(&e))
+            return fail(tr("Couldn't stack the pile: %1. Press R to try again.").arg(e));
+        afterSettle([=] { verify(a.piece, grouped, tr("Making a pile")); });
         break;
     }
     case Action::PileJoin: {
         // A new window joins the focused group by itself (group:auto_group);
-        // otherwise it is moved into the pile beside it.
+        // otherwise it is moved into the pile beside it, again only once it
+        // has focus.
         QString leader;
         if (!ownPiece(m_pileLeader, &leader))
             return fail(tr("Couldn't find the pile. Press R to try again."));
@@ -896,8 +903,9 @@ void Game::runNext() {
             };
             const char dir = Puzzle::direction(rect(me), rect(them));
             QString e;
-            QString owned;
-            if (!ownPiece(a.piece, &owned) || !m_hyprctl->moveIntoGroup(address, dir, &e))
+            if (!focusOwnPiece(a.piece, &e))
+                return fail(tr("Couldn't stack the pile: %1 wouldn't take focus. Press R to try again.").arg(pieceName(a.piece)));
+            if (!m_hyprctl->moveFocusedIntoGroup(dir, &e))
                 return fail(tr("Couldn't add %1 to the pile: %2. Press R to try again.").arg(pieceName(a.piece), e));
             afterSettle([=] { verify(a.piece, joined, tr("Adding to the pile")); });
         };

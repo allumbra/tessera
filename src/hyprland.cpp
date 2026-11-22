@@ -220,7 +220,7 @@ bool Hyprctl::moveSilently(const QString &address, const QString &workspace, QSt
 
 bool Hyprctl::setFloating(const QString &address, bool floating, QString *error) {
     return run(QString("hl.dsp.window.float({ action = \"%1\", window = \"%2\" })")
-                   .arg(floating ? "enable" : "disable", selector(address)),
+                   .arg(floating ? "on" : "off", selector(address)),
                {floating ? "setfloating" : "settiled", selector(address)}, error);
 }
 
