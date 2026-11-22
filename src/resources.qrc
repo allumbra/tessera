@@ -1,0 +1,17 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="Main.qml">Main.qml</file>
+        <file alias="PieceWindow.qml">PieceWindow.qml</file>
+        <file alias="PictureCard.qml">PictureCard.qml</file>
+        <file alias="HintPanel.qml">HintPanel.qml</file>
+        <file alias="Keycaps.qml">Keycaps.qml</file>
+        <file alias="images/wave.jpg">images/wave.jpg</file>
+        <file alias="images/starry.jpg">images/starry.jpg</file>
+        <file alias="images/sunrise.jpg">images/sunrise.jpg</file>
+        <file alias="images/sierra.jpg">images/sierra.jpg</file>
+        <file alias="images/nasa.jpg">images/nasa.jpg</file>
+        <file alias="i18n/en.json">i18n/en.json</file>
+        <file alias="i18n/da.json">i18n/da.json</file>
+        <file alias="i18n/de.json">i18n/de.json</file>
+    </qresource>
+</RCC>

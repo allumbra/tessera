@@ -1,0 +1,10 @@
+{
+  "Tessera needs %n empty workspace(s) on this monitor, and every one has windows on it. Move or close the windows on one, and the game starts by itself.": {
+    "one": "Tessera needs %n empty workspace on this monitor, and every one has windows on it. Move or close the windows on one, and the game starts by itself.",
+    "other": "Tessera needs %n empty workspaces on this monitor, and every one has windows on it. Move or close the windows on one, and the game starts by itself."
+  },
+  "Tessera needs %n empty workspace(s) on this monitor; only %1 empty now. Move or close the windows on another one, and the game starts by itself.": {
+    "one": "Tessera needs %n empty workspace on this monitor; only %1 empty now. Move or close the windows on another one, and the game starts by itself.",
+    "other": "Tessera needs %n empty workspaces on this monitor; only %1 empty now. Move or close the windows on another one, and the game starts by itself."
+  }
+}
