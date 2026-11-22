@@ -196,5 +196,10 @@
   "or": "eller",
   "right": "højre",
   "up": "toppen",
-  "↑ ↓ choose · Space starts · ? shortcuts · Q quits": "↑ ↓ vælg · Mellemrum starter · ? genveje · Q afslutter"
+  "↑ ↓ choose · Space starts · ? shortcuts · Q quits": "↑ ↓ vælg · Mellemrum starter · ? genveje · Q afslutter",
+  "Complete!": "Færdig!",
+  "New best: %1": "Ny rekord: %1",
+  "%1 · %2 of %3 pictures done": "%1 · %2 af %3 billeder færdige",
+  "Space: next · R: again": "Mellemrum: næste · R: igen",
+  "Board:": "Brættet:"
 }

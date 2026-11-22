@@ -196,5 +196,10 @@
   "or": "oder",
   "right": "rechts",
   "up": "oben",
-  "↑ ↓ choose · Space starts · ? shortcuts · Q quits": "↑ ↓ wählen · Leertaste startet · ? Tastenkürzel · Q beendet"
+  "↑ ↓ choose · Space starts · ? shortcuts · Q quits": "↑ ↓ wählen · Leertaste startet · ? Tastenkürzel · Q beendet",
+  "Complete!": "Fertig!",
+  "New best: %1": "Neue Bestzeit: %1",
+  "%1 · %2 of %3 pictures done": "%1 · %2 von %3 Bildern fertig",
+  "Space: next · R: again": "Leertaste: weiter · R: nochmal",
+  "Board:": "Brett:"
 }

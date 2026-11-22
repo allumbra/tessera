@@ -1052,6 +1052,14 @@ void Game::updateHints() {
         emit changed();
 }
 
+// The keys back to the board's workspace, for pieces that celebrate far from
+// it.
+QString Game::boardChord() const {
+    if (m_boardWs <= 0)
+        return {};
+    return chord(QString("Switch to workspace %1").arg(Puzzle::slot(m_boardWs)));
+}
+
 void Game::finish() {
     m_finished = m_now();
     if (m_level.lesson) {

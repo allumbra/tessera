@@ -65,6 +65,7 @@ class Game : public QObject {
     Q_PROPERTY(QVariantList tiers READ tiers NOTIFY changed)
     Q_PROPERTY(bool puzzlesUnlocked READ puzzlesUnlocked NOTIFY changed)
     Q_PROPERTY(QVariantList pictures READ pictures NOTIFY changed)
+    Q_PROPERTY(QString boardChord READ boardChord NOTIFY changed)
     Q_PROPERTY(QVariantList hints READ hints NOTIFY changed)
     Q_PROPERTY(int hintTier READ hintTier NOTIFY changed)
     Q_PROPERTY(QString objective READ objective NOTIFY changed)
@@ -179,6 +180,7 @@ private:
     bool ownPiece(const QString &id, QString *address); // the only gate to a dispatch
     bool focusOwnPiece(const QString &id, QString *error);
     QString chord(const QString &action) const;
+    QString boardChord() const;
     QString pieceName(const QString &id) const;
     QString pictureTitle(int picture) const;
 

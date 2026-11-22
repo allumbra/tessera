@@ -19,6 +19,15 @@ Window {
 
     signal quitRequested()
 
+    function clock(ms) {
+        const lang = translator.language
+        const total = Math.max(0, ms)
+        const minutes = Math.floor(total / 60000)
+        const seconds = (total % 60000) / 1000
+        return minutes.toLocaleString(Qt.locale(), 'f', 0) + ":" + (seconds < 10 ? Number(0).toLocaleString(Qt.locale(), 'f', 0) : "")
+               + seconds.toLocaleString(Qt.locale(), 'f', 1)
+    }
+
     // A window nested in another becomes its dialog, and Hyprland floats
     // dialogs; pieces have to tile, so they have no parent window.
     transientParent: null
@@ -33,6 +42,29 @@ Window {
     readonly property bool focusedHere: win.active
     readonly property real unit: Math.max(0.65, Math.min(1.25, Math.min(width / 520, height / 300)))
     readonly property var firstHint: game.hints.length > 0 ? game.hints[0] : null
+    // This piece's picture, from the board's list, so a piece knows when
+    // its picture is whole.
+    readonly property var artwork: {
+        for (const p of game.pictures)
+            if (p.image === win.image)
+                return p
+        return null
+    }
+    readonly property bool pictureDone: !!(artwork && artwork.complete)
+    readonly property bool solved: game.state === "solved"
+    // One piece speaks for the whole picture: its biggest, the first of
+    // equals, which always has room for the banner.
+    readonly property bool speaker: {
+        if (!artwork || !artwork.cells)
+            return false
+        let best = null
+        for (const c of artwork.cells)
+            if (!best || c.w * c.h > best.w * best.h + 1e-6)
+                best = c
+        return best !== null && Math.abs(best.x - cell.x) < 1e-3 && Math.abs(best.y - cell.y) < 1e-3
+    }
+    onPictureDoneChanged: if (pictureDone) cheer.restart()
+    onSolvedChanged: if (solved) cheer.restart()
     readonly property bool mine: firstHint !== null && (firstHint.piece === "" || firstHint.piece === win.pieceId
                                                         || game.focusedPiece === win.pieceId)
 
@@ -52,6 +84,9 @@ Window {
     Shortcut { sequence: "Y"; context: Qt.WindowShortcut; enabled: win.confirmQuit; onActivated: win.quitRequested() }
     Shortcut { sequence: "Return"; context: Qt.WindowShortcut; enabled: win.confirmQuit; onActivated: win.quitRequested() }
     Shortcut { sequence: "N"; context: Qt.WindowShortcut; enabled: win.confirmQuit; onActivated: win.confirmQuit = false }
+    // Solved, the board's keys work here too, so there's no need to go back.
+    Shortcut { sequence: "Space"; context: Qt.WindowShortcut; enabled: win.solved; onActivated: game.primary() }
+    Shortcut { sequence: "R"; context: Qt.WindowShortcut; enabled: win.solved; onActivated: game.restart() }
 
     Image {
         id: picture
@@ -104,7 +139,7 @@ Window {
         // for this piece, with the player's own keys.
         Rectangle {
             id: strip
-            visible: win.focusedHere && win.hintWanted && !win.confirmQuit && game.state === "playing"
+            visible: win.focusedHere && win.hintWanted && !win.confirmQuit && game.state === "playing" && !win.pictureDone
                      && win.height >= 70
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: Math.round(8 * win.unit) }
             height: stripColumn.implicitHeight + Math.round(14 * win.unit)
@@ -160,13 +195,94 @@ Window {
         // A small H for a hidden strip, so the help is never more than a key
         // away.
         Rectangle {
-            visible: win.focusedHere && !strip.visible && !win.confirmQuit && game.state === "playing"
+            visible: win.focusedHere && !strip.visible && !win.confirmQuit && game.state === "playing" && !win.pictureDone
             anchors { right: parent.right; bottom: parent.bottom; margins: Math.round(8 * win.unit) }
             width: Math.round(24 * win.unit); height: width
             radius: Math.min(4, theme.radius)
             color: Qt.rgba(0, 0, 0, 0.6)
             border.color: win.accent
             Text { anchors.centerIn: parent; text: "H"; color: win.accent; font.pixelSize: Math.round(13 * win.unit); font.bold: true }
+        }
+
+
+        // A finished picture lights up on every piece, and the middle piece
+        // says so: the board may be on another workspace.
+        Rectangle {
+            id: flash
+            anchors.fill: parent
+            color: win.accent
+            opacity: 0
+            SequentialAnimation on opacity {
+                id: cheer
+                running: false
+                NumberAnimation { to: 0.45; duration: 140 }
+                NumberAnimation { to: 0; duration: 700; easing.type: Easing.OutQuad }
+            }
+        }
+        Rectangle {
+            anchors.fill: parent
+            color: "transparent"
+            visible: win.pictureDone
+            border.color: win.accent
+            border.width: Math.max(2, Math.round(3 * win.unit))
+        }
+        Rectangle {
+            id: banner
+            visible: win.pictureDone && win.speaker && !win.confirmQuit && win.width >= 120 && win.height >= 80
+            anchors.centerIn: parent
+            width: Math.min(parent.width - Math.round(16 * win.unit), bannerColumn.implicitWidth + Math.round(32 * win.unit))
+            height: bannerColumn.implicitHeight + Math.round(20 * win.unit)
+            radius: Math.min(8, theme.radius)
+            color: Qt.rgba(0.05, 0.05, 0.06, 0.9)
+            border.color: win.accent
+            border.width: 2
+            scale: visible ? 1 : 0.6
+            Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack } }
+
+            Column {
+                id: bannerColumn
+                anchors.centerIn: parent
+                width: Math.min(implicitWidth, win.width - Math.round(48 * win.unit))
+                spacing: Math.round(6 * win.unit)
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: !win.solved ? qsTr("Complete!")
+                          : game.lesson ? "★".repeat(game.stars) + "☆".repeat(3 - game.stars)
+                          : (game.newBest ? qsTr("New best: %1") : qsTr("Solved in %1")).arg(win.clock(game.elapsed))
+                    color: win.accent
+                    font.pixelSize: Math.round((win.solved && game.lesson ? 30 : 22) * win.unit)
+                    font.weight: Font.Bold
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: !win.solved && win.artwork !== null
+                    readonly property int done: game.pictures.filter(p => p.complete).length
+                    text: win.artwork ? qsTr("%1 · %2 of %3 pictures done").arg(win.artwork.title).arg(done).arg(game.pictures.length) : ""
+                    color: "#f2f2f2"
+                    font.pixelSize: Math.round(13 * win.unit)
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, win.width - Math.round(48 * win.unit))
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: win.solved
+                    text: qsTr("Space: next · R: again")
+                    color: "#f2f2f2"
+                    font.pixelSize: Math.round(13 * win.unit)
+                }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: win.solved && game.boardChord !== ""
+                    spacing: Math.round(6 * win.unit)
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Board:")
+                        color: "#a8a8b2"
+                        font.pixelSize: Math.round(12 * win.unit)
+                    }
+                    Keycaps { chord: game.boardChord; keySize: Math.round(11 * win.unit) }
+                }
+            }
         }
 
         // Super+W on a piece: it says why it stays.
