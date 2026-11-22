@@ -1,0 +1,25 @@
+{
+  "pagination": {"total": 62285, "limit": 6, "offset": 10, "total_pages": 10381, "current_page": 3},
+  "data": [
+    {"_score": 17578.047, "id": 14655, "title": "Two Sisters (On the Terrace)",
+     "thumbnail": {"width": 19848, "height": 24629, "alt_text": "Impressionist painting of two girls on balcony."},
+     "date_display": "1881", "artist_display": "Pierre-Auguste Renoir (French, 1841–1919)",
+     "is_public_domain": true, "artist_title": "Pierre-Auguste Renoir", "image_id": "3a608f55-d76e-fa96-d0b1-0789fbc48f1e"},
+    {"_score": 17408.977, "id": 80607, "title": "Self-Portrait",
+     "thumbnail": {"width": 6116, "height": 7794},
+     "date_display": "1887", "artist_display": "Vincent van Gogh (Dutch, 1853–1890)",
+     "is_public_domain": true, "artist_title": "Vincent van Gogh", "image_id": "47c5bcb8-62ef-e5d7-55e7-f5121f409a30"},
+    {"id": 99001, "title": "Under copyright", "is_public_domain": false, "artist_title": "Someone Recent",
+     "image_id": "11111111-2222-3333-4444-555555555555"},
+    {"id": 99002, "title": "Says true as a string", "is_public_domain": "true",
+     "image_id": "11111111-2222-3333-4444-555555555556"},
+    {"id": 99003, "title": "Image id tries a path", "is_public_domain": true,
+     "image_id": "../../evil/full/1,/0/x.jpg?q=1"},
+    {"id": 99004, "title": "", "is_public_domain": true, "image_id": "11111111-2222-3333-4444-555555555557"},
+    {"id": "61128", "title": "Id as a string", "is_public_domain": true, "image_id": "defb4004-b500-218d-3d9b-9a02423f097d"},
+    {"id": 61129, "title": "<b>Bold</b>‮ title\u0007 with   controls", "is_public_domain": true,
+     "artist_title": null, "artist_display": "Henri de Toulouse-Lautrec\nFrench, 1864–1901",
+     "date_display": "1892–95", "image_id": "defb4004-b500-218d-3d9b-9a02423f097e"}
+  ],
+  "info": {"license_text": "The `description` field in this response is licensed under CC BY 4.0."}
+}

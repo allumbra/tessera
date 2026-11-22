@@ -1,0 +1,3 @@
+{"objectID": 20002, "isPublicDomain": true, "title": "Image on another host",
+ "primaryImage": "https://evil.example.com/a.jpg", "primaryImageSmall": "http://images.metmuseum.org/plain-http.jpg",
+ "objectURL": "javascript:alert(1)"}
