@@ -1,5 +1,5 @@
 pkgname=tessera
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc='A jigsaw puzzle you solve with your real Omarchy window shortcuts'
 arch=('x86_64' 'aarch64')

@@ -1135,6 +1135,39 @@ private slots:
         QVERIFY(QFileInfo::exists(gallery.cache().picturePath(result.pictures.first().key)));
     }
 
+    // Mixed means new pictures: with museum art cached, puzzles and lessons
+    // use it, and the built-in works only fill in.
+    void mixedPrefersMuseumArtOverTheBuiltIns() {
+        QTemporaryDir dir;
+        {
+            ArtCache cache(dir.filePath("cache"));
+            for (int k = 1; k <= 6; ++k) {
+                QImage img(1600, 900, QImage::Format_RGB32);
+                img.fill(QColor::fromHsv(k * 50, 200, 200));
+                Source src;
+                src.key = QString("aic:%1").arg(k);
+                src.name = src.credit.title = QString("Work %1").arg(k);
+                QVERIFY(cache.storeArt(src, img));
+            }
+        }
+        Gallery::Options o;
+        o.settingsPath = dir.filePath("settings.json");
+        o.cacheDir = dir.filePath("cache");
+        Gallery gallery(o);
+        QCOMPARE(gallery.source(), QString("mixed"));
+        for (bool lesson : {false, true}) {
+            Gallery::Request r;
+            r.musts = lesson ? QStringList{"wave"} : QStringList{"", ""};
+            r.lesson = lesson;
+            r.area = QSizeF(1920, 1054);
+            const auto result = prepareNow(gallery, r);
+            QVERIFY(!result.pictures.isEmpty());
+            for (const auto &p : result.pictures)
+                for (const QString &src : p.sources)
+                    QVERIFY2(src.startsWith("aic:"), qPrintable(src));
+        }
+    }
+
     void offlineFallsBackToTheBuiltInPicturesAndSaysSo() {
         QTemporaryDir dir;
         Gallery::Options o;

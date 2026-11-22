@@ -253,15 +253,19 @@ QList<Source> Gallery::builtins() {
     return out;
 }
 
-QList<Source> Gallery::pool(bool lesson) const {
-    const QString mode = lesson ? QStringLiteral("builtin") : m_settings.source;
+QList<Source> Gallery::pool(bool) const {
+    const QString mode = m_settings.source;
     QList<Source> online = m_settings.online ? m_cache.online() : QList<Source>();
     if (mode == "online")
         return online.isEmpty() ? builtins() : online;
     if (mode == "folder")
         return m_folderSources.isEmpty() ? builtins() : m_folderSources;
-    if (mode == "mixed")
-        return builtins() + m_folderSources + online;
+    // Mixed means new pictures: the player's folder and museum art, with
+    // the built-in works only as a fallback (see fresh()).
+    if (mode == "mixed") {
+        const QList<Source> fresh = m_folderSources + online;
+        return fresh.isEmpty() ? builtins() : fresh;
+    }
     return builtins();
 }
 
@@ -277,7 +281,7 @@ void Gallery::prepare(const Request &request, Ready ready) {
     m_preparing = true;
     m_note.clear();
     emit changed();
-    const QString mode = request.lesson ? QStringLiteral("builtin") : m_settings.source;
+    const QString mode = m_settings.source;
     const int wanted = request.musts.size() + request.strays;
     const bool wantsOnline = mode == "online" || mode == "mixed";
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -300,8 +304,11 @@ void Gallery::prepare(const Request &request, Ready ready) {
 }
 
 void Gallery::continuePrepare(const Request &request, int generation, Ready ready) {
-    const QString mode = request.lesson ? QStringLiteral("builtin") : m_settings.source;
+    const QString mode = m_settings.source;
     QList<Source> pool = this->pool(request.lesson);
+    // A lesson names a built-in work, used when the chosen source has
+    // nothing else to offer.
+    const bool builtinOnly = std::all_of(pool.begin(), pool.end(), [](const Source &s) { return s.kind == Source::Builtin; });
     if (m_note.isEmpty() && !request.lesson) {
         if ((mode == "online" || mode == "mixed") && !m_settings.online && mode == "online")
             m_note = tr("Online pictures are turned off, so this puzzle uses the built-in ones.");
@@ -375,13 +382,19 @@ void Gallery::continuePrepare(const Request &request, int generation, Ready read
 
     for (int i = 0; i < request.musts.size(); ++i) {
         QList<Source> candidates;
-        if (!request.musts.at(i).isEmpty()) {
+        if (!request.musts.at(i).isEmpty() && builtinOnly) {
             if (auto s = byKey("builtin:" + request.musts.at(i)))
                 candidates << *s;
         }
         for (const Source &s : pool)
             if (!used.contains(s.key) && (candidates.isEmpty() || s.key != candidates.first().key))
                 candidates << s;
+        // Mixed with too little new art: the built-in works fill in.
+        if (candidates.size() < 3 && mode == "mixed")
+            for (const Source &s : all)
+                if (!used.contains(s.key) && std::none_of(candidates.begin(), candidates.end(),
+                                                          [&](const Source &c) { return c.key == s.key; }))
+                    candidates << s;
         // Fewer sources than pictures: the rest may be used again, but only
         // from the source the player chose.
         if (candidates.size() < 3)

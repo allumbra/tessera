@@ -66,7 +66,7 @@ Press P in the menu to choose where pictures come from:
 
 | Source | What it is |
 |---|---|
-| Mixed (default) | The built-in works, museum art and your folder together |
+| Mixed (default) | Museum art and your folder, with the built-in works only filling in when there is too little new art |
 | Built-in | The five public-domain works compiled into Tessera; works offline |
 | Museums online | Public-domain art from the Art Institute of Chicago and the Met |
 | My folder | The JPEG, PNG and WebP files in one folder of yours |
@@ -80,7 +80,7 @@ images in justified rows or columns, every cell cropped to fit, with thin
 gutters. This runs off the UI thread. The board credits every work in a
 picture: title, artist, date, licence, where it's from and its page.
 
-Lessons always use the built-in works, so they play the same everywhere.
+Lessons use the chosen source too; a lesson falls back to its own built-in work when there is nothing else.
 
 ### Online, and what it sends
 
