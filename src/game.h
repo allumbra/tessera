@@ -182,6 +182,7 @@ private:
     QString pictureTitle(int picture) const;
 
     // Setting up
+    int monitorBlock() const;
     void allocate();
     void dealPicture();
     void queueDeal(int picture);

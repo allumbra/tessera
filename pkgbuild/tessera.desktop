@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tessera
+Comment=Put pictures together with your Omarchy window shortcuts
+Comment[da]=Saml billeder med dine Omarchy-vinduesgenveje
+Comment[de]=Setz Bilder mit deinen Omarchy-Fensterkürzeln zusammen
+Exec=tessera
+Icon=tessera
+Terminal=false
+Categories=Game;Education;Utility;
+Keywords=puzzle;jigsaw;keyboard;shortcuts;keybindings;hyprland;windows;tiling;learn;game;
+StartupWMClass=tessera

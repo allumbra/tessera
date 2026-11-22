@@ -2,6 +2,8 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
+#include <QFile>
 #include <QRandomGenerator>
 #include <algorithm>
 
@@ -435,7 +437,8 @@ void Game::playTier(int index) {
 }
 
 void Game::begin() {
-    if (m_state == "error" && m_sourceFailed)
+    // Only from a level's card, or to deal the same level again.
+    if ((m_state == "error" && m_sourceFailed) || m_state == "menu" || m_state == "connecting")
         return;
     clearPieces();
     m_error.clear();
@@ -615,6 +618,35 @@ bool Game::ownPiece(const QString &id, QString *address) {
 
 // ── Setting up ────────────────────────────────────────────────────────────
 
+// Omarchy gives each monitor its own ten workspaces, block * 10 + 1 to
+// block * 10 + 10, and records which block is whose in
+// ~/.local/state/omarchy/monitor-workspaces ("block<TAB>connector<TAB>..."),
+// read here and never written. Without it, the board's own workspace says.
+int Game::monitorBlock() const {
+    int block = std::max(0, (m_boardWs - 1) / 10);
+    const int monitorId = client(m_board).value("monitor").toInt(-1);
+    QString connector;
+    for (const auto &value : m_hyprctl->query("monitors").toArray()) {
+        const auto m = value.toObject();
+        if (m.value("id").toInt(-2) == monitorId)
+            connector = m.value("name").toString();
+    }
+    const QString path = qEnvironmentVariableIsEmpty("TESSERA_MONITOR_WORKSPACES")
+        ? QDir::homePath() + "/.local/state/omarchy/monitor-workspaces"
+        : qEnvironmentVariable("TESSERA_MONITOR_WORKSPACES");
+    QFile file(path);
+    if (!connector.isEmpty() && file.open(QIODevice::ReadOnly)) {
+        for (const QString &line : QString::fromUtf8(file.readAll()).split('\n')) {
+            const QStringList f = line.split('\t');
+            bool ok = false;
+            const int b = f.value(0).toInt(&ok);
+            if (ok && f.size() >= 2 && f.at(1) == connector)
+                block = b;
+        }
+    }
+    return block;
+}
+
 // Pieces only go where nothing else is: empty workspaces on the board's
 // monitor. The game waits, and says which, until there are enough.
 void Game::allocate() {
@@ -626,7 +658,7 @@ void Game::allocate() {
         emit changed();
         return;
     }
-    const int block = (m_boardWs - 1) / 10;
+    const int block = monitorBlock();
     QSet<int> busy;
     for (const auto &value : m_hyprctl->query("workspaces").toArray()) {
         const auto w = value.toObject();

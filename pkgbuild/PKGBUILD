@@ -1,0 +1,24 @@
+pkgname=tessera
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='A jigsaw puzzle you solve with your real Omarchy window shortcuts'
+arch=('x86_64' 'aarch64')
+license=('MIT')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'hyprland')
+makedepends=('gcc' 'make')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  ./bin/build
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/tessera "$pkgdir/usr/bin/tessera"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 CREDITS.md "$pkgdir/usr/share/licenses/$pkgname/CREDITS.md"
+  install -Dm644 "$startdir/tessera.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/tessera.svg"
+  install -Dm644 "$startdir/tessera.desktop" "$pkgdir/usr/share/applications/tessera.desktop"
+}

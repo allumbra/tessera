@@ -500,25 +500,26 @@ ApplicationWindow {
         Rectangle {
             anchors.fill: parent
             visible: win.helpVisible
-            color: Qt.rgba(0.05, 0.05, 0.06, 0.96)
+            color: "#0e0e10"
             MouseArea { anchors.fill: parent; onClicked: win.helpVisible = false }
             ColumnLayout {
                 anchors.centerIn: parent
-                width: Math.min(parent.width - 40, 760)
+                width: Math.min(parent.width - 40, 1060)
                 spacing: 12
                 Text { text: qsTr("Shortcuts"); color: "#f2f2f2"; font.pixelSize: 22; font.weight: Font.Bold }
                 GridLayout {
                     Layout.fillWidth: true
-                    columns: win.width > 900 ? 2 : 1
-                    columnSpacing: 30
+                    columns: win.width > 980 ? 2 : 1
+                    columnSpacing: 36
                     rowSpacing: 8
+                    uniformCellWidths: true
                     Repeater {
                         model: game.cheatSheet
                         delegate: RowLayout {
                             required property var modelData
                             Layout.fillWidth: true
                             spacing: 10
-                            Text { Layout.fillWidth: true; text: modelData.name; color: "#c8c8d0"; font.pixelSize: 14; elide: Text.ElideRight }
+                            Text { Layout.fillWidth: true; text: modelData.name; color: "#c8c8d0"; font.pixelSize: 14; wrapMode: Text.Wrap }
                             Keycaps { chord: modelData.chord; keySize: 11; width: naturalWidth }
                         }
                     }

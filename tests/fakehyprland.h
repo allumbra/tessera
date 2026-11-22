@@ -449,6 +449,7 @@ public:
             o["class"] = w.cls;
             o["pid"] = QJsonValue(w.pid);
             o["mapped"] = true;
+            o["monitor"] = 0;
             o["floating"] = w.floating;
             QJsonArray grouped;
             bool hidden = false;
@@ -495,7 +496,7 @@ public:
         if (what == "monitors") {
             QJsonObject special{{"id", scratchpadShown ? Scratchpad : 0},
                                 {"name", scratchpadShown ? QString("special:scratchpad") : QString()}};
-            return QJsonArray{QJsonObject{{"name", "HDMI-A-1"}, {"focused", true}, {"specialWorkspace", special},
+            return QJsonArray{QJsonObject{{"id", 0}, {"name", "HDMI-A-1"}, {"focused", true}, {"specialWorkspace", special},
                                           {"activeWorkspace", QJsonObject{{"id", activeWs}}}}};
         }
         if (what == "getoption general:layout")

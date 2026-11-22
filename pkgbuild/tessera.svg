@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#FFD60A"/>
+  <!-- A picture cut the way dwindle splits windows: a spiral of tiles,
+       the last one lifted out of place. -->
+  <rect x="10" y="12" width="21" height="40" rx="2" fill="#1d1d22"/>
+  <rect x="34" y="12" width="20" height="19" rx="2" fill="#1d1d22"/>
+  <rect x="34" y="34" width="9" height="18" rx="2" fill="#1d1d22"/>
+  <rect x="47" y="37" width="10" height="10" rx="2" fill="#0e0e10" transform="rotate(12 52 42)"/>
+  <path d="M14 46 L22 34 L27 41 L31 37" stroke="#FFD60A" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="45" cy="20" r="3.5" fill="#FFD60A"/>
+</svg>

@@ -592,6 +592,24 @@ private slots:
         QCOMPARE(rig.game->workspaces(), (QList<int>{7, 9}));
     }
 
+    // A second monitor's workspaces are 11 to 20 and so on; Omarchy's block
+    // map says which monitor has which.
+    void workspacesComeFromTheBoardsMonitorBlock() {
+        QTemporaryDir dir;
+        writeFile(dir.filePath("blocks"), "1\tHDMI-A-1\tSamsung\n0\tDP-1\tOther\n");
+        qputenv("TESSERA_MONITOR_WORKSPACES", dir.filePath("blocks").toUtf8());
+        Rig rig(true);
+        QVERIFY(rig.waitFor("menu"));
+        rig.desktop.find(rig.board)->workspace = 11;
+        rig.desktop.activeWs = 11;
+        rig.game->playLesson(3);
+        rig.game->begin();
+        QVERIFY(rig.waitFor("dealing"));
+        QCOMPARE(rig.game->workspaces(), (QList<int>{12, 13}));
+        QVERIFY(rig.game->objectiveChord().endsWith("+ 2"));
+        qunsetenv("TESSERA_MONITOR_WORKSPACES");
+    }
+
     void otherLayoutsAreSaidSo() {
         Rig rig(true);
         QVERIFY(rig.waitFor("menu"));

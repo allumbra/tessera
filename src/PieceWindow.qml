@@ -31,7 +31,7 @@ Window {
 
     readonly property color accent: theme.accent
     readonly property bool focusedHere: win.active
-    readonly property real unit: Math.max(0.55, Math.min(1.25, Math.min(width / 520, height / 300)))
+    readonly property real unit: Math.max(0.65, Math.min(1.25, Math.min(width / 520, height / 300)))
     readonly property var firstHint: game.hints.length > 0 ? game.hints[0] : null
     readonly property bool mine: firstHint !== null && (firstHint.piece === "" || firstHint.piece === win.pieceId
                                                         || game.focusedPiece === win.pieceId)
@@ -57,12 +57,9 @@ Window {
         id: picture
         anchors.fill: parent
         source: win.image
-        // The slice, in the picture's own pixels, scaled to whatever tile the
-        // window has now.
-        sourceClipRect: sourceSize.width > 0
-            ? Qt.rect(win.cell.x * sourceSize.width, win.cell.y * sourceSize.height,
-                      win.cell.width * sourceSize.width, win.cell.height * sourceSize.height)
-            : Qt.rect(0, 0, 0, 0)
+        // The slice, in the picture's own pixels (every picture is 1600 by
+        // 900), scaled to whatever tile the window has now.
+        sourceClipRect: Qt.rect(win.cell.x * 1600, win.cell.y * 900, win.cell.width * 1600, win.cell.height * 900)
         fillMode: Image.Stretch
         smooth: true
         asynchronous: false
@@ -125,12 +122,13 @@ Window {
 
                 Text {
                     width: parent.width
-                    visible: stripColumn.roomy || !win.firstHint || win.firstHint.chord === ""
+                    // Narrow but tall tiles have room to wrap the words.
+                    visible: stripColumn.roomy || win.height >= 300 || !win.firstHint || win.firstHint.chord === ""
                     text: win.firstHint ? win.firstHint.text
                                         : (game.lesson ? qsTr("Press H for a hint.") : game.objective)
                     color: "#f2f2f2"
                     wrapMode: Text.Wrap
-                    maximumLineCount: win.height >= 200 ? 3 : 1
+                    maximumLineCount: win.height >= 300 ? 5 : win.height >= 200 ? 3 : 1
                     elide: Text.ElideRight
                     font.pixelSize: Math.round(14 * win.unit)
                 }
