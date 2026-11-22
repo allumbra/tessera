@@ -1,6 +1,7 @@
 #include "puzzle.h"
 
 #include <QCoreApplication>
+#include <QSet>
 #include <algorithm>
 #include <cmath>
 
@@ -174,11 +175,84 @@ char Puzzle::stepToward(const QHash<QString, QRectF> &tiles, const QString &from
 
 int Puzzle::slot(int workspace) { return workspace <= 0 ? 0 : ((workspace - 1) % 10) + 1; }
 
+int Puzzle::progress(const Desk &desk, const Evaluation &e) {
+    int score = 0;
+    QSet<int> pictureSpaces;
+    for (const Picture &p : desk.pictures)
+        pictureSpaces.insert(p.workspace);
+    for (const Piece &p : desk.pieces) {
+        const Window w = desk.windows.value(p.id);
+        if (p.picture < 0) {
+            // A stray only needs to be out of every picture.
+            if (w.present && (w.special || !pictureSpaces.contains(w.workspace)))
+                score += 2;
+            continue;
+        }
+        const PieceState ps = e.pieces.value(p.id);
+        score += (ps.home ? 1 : 0) + (ps.tiled ? 1 : 0) + (ps.inPlace ? 2 : 0);
+    }
+    for (int i = 0; i < desk.pictures.size(); ++i) {
+        const Picture &picture = desk.pictures.at(i);
+        const Cut::Tree tree = Cut::infer(desk.tiles(picture.workspace));
+        if (!tree.valid())
+            continue;
+        const QStringList spine = tree.spine();
+        const QList<int> nodes = tree.spineNodes();
+        for (int k = 0; k < spine.size() && k < picture.chain.pieces(); ++k) {
+            const Piece *piece = desk.piece(spine.at(k));
+            if (piece && piece->picture == i && piece->index == k)
+                ++score;
+        }
+        for (int k = 0; k < nodes.size() && k < picture.chain.levels.size(); ++k) {
+            const auto &node = tree.nodes.at(nodes.at(k));
+            const auto &level = picture.chain.levels.at(k);
+            if (node.split == level.split) {
+                ++score;
+                if (std::abs(node.ratio - level.ratio) <= desk.tolerance * 0.8)
+                    ++score;
+            }
+        }
+    }
+    return score;
+}
+
+int Puzzle::distance(const Desk &desk, const QString &from, const QString &to) {
+    const Window a = desk.windows.value(from), b = desk.windows.value(to);
+    if (!a.present || !b.present || a.workspace != b.workspace || a.special || b.special)
+        return -1;
+    const auto tiles = desk.tiles(a.workspace);
+    const QString start = desk.groupLeaf(from), goal = desk.groupLeaf(to);
+    if (!tiles.contains(start) || !tiles.contains(goal))
+        return -1;
+    QHash<QString, int> steps{{start, 0}};
+    QList<QString> queue{start};
+    while (!queue.isEmpty()) {
+        const QString at = queue.takeFirst();
+        if (at == goal)
+            return steps.value(at);
+        for (char d : {'l', 'r', 'u', 'd'}) {
+            const QString n = neighbour(tiles, at, d);
+            if (!n.isEmpty() && !steps.contains(n)) {
+                steps.insert(n, steps.value(at) + 1);
+                queue << n;
+            }
+        }
+    }
+    return -1;
+}
+
 // ── Hints ────────────────────────────────────────────────────────────────
 
 namespace {
 
 QString tr(const char *text) { return QCoreApplication::translate("Hints", text); }
+
+// A move a hint asks for: the Omarchy action, and the player's chord for it.
+struct Key {
+    QString action;
+    QString chord;
+    QString family; // for a hint that names a kind of move, not one action
+};
 
 struct Context {
     const Desk &desk;
@@ -189,30 +263,33 @@ struct Context {
 
     QString name(const QString &id) const { return names(id); }
     QString slotText(int ws) const { return QString::number(slot(ws)); }
-    QString moveTo(int ws) const { return chords(QString("Move window to workspace %1").arg(slot(ws))); }
-    QString goTo(int ws) const { return chords(QString("Switch to workspace %1").arg(slot(ws))); }
-    QString focus(char d) const {
+    Key key(const QString &action) const { return {action, chords(action), {}}; }
+    Key moveTo(int ws) const { return key(QString("Move window to workspace %1").arg(slot(ws))); }
+    Key goTo(int ws) const { return key(QString("Switch to workspace %1").arg(slot(ws))); }
+    // "Focus one of its pieces": any arrow will do.
+    static Key arrows() { return {{}, QStringLiteral("SUPER + ARROWS"), QStringLiteral("focus")}; }
+    Key focus(char d) const {
         switch (d) {
-        case 'l': return chords("Focus on left window");
-        case 'r': return chords("Focus on right window");
-        case 'u': return chords("Focus on above window");
-        default: return chords("Focus on below window");
+        case 'l': return key("Focus on left window");
+        case 'r': return key("Focus on right window");
+        case 'u': return key("Focus on above window");
+        default: return key("Focus on below window");
         }
     }
-    QString swap(char d) const {
+    Key swap(char d) const {
         switch (d) {
-        case 'l': return chords("Swap window to the left");
-        case 'r': return chords("Swap window to the right");
-        case 'u': return chords("Swap window up");
-        default: return chords("Swap window down");
+        case 'l': return key("Swap window to the left");
+        case 'r': return key("Swap window to the right");
+        case 'u': return key("Swap window up");
+        default: return key("Swap window down");
         }
     }
-    QString intoGroup(char d) const {
+    Key intoGroup(char d) const {
         switch (d) {
-        case 'l': return chords("Move window to group on left");
-        case 'r': return chords("Move window to group on right");
-        case 'u': return chords("Move window to group on top");
-        default: return chords("Move window to group on bottom");
+        case 'l': return key("Move window to group on left");
+        case 'r': return key("Move window to group on right");
+        case 'u': return key("Move window to group on top");
+        default: return key("Move window to group on bottom");
         }
     }
     static QString way(char d) {
@@ -227,8 +304,8 @@ struct Context {
 
 using Hints::Hint;
 
-Hint hint(const QString &text, const QString &chord, const QString &detail = {}, const QString &piece = {}) {
-    return {text, chord, detail, piece};
+Hint hint(const QString &text, const Key &key, const QString &detail = {}, const QString &piece = {}) {
+    return {text, key.chord, detail, piece, key.action, key.family};
 }
 
 // What a picture still needs, before its tiles can be arranged: stray
@@ -239,10 +316,10 @@ QList<Hint> gathering(const Context &c, int pictureIndex, const QString &from) {
     const int ws = picture.workspace;
     const auto tiles = c.desk.allTiles(ws);
     const QRectF here = tiles.value(from);
-    auto towards = [&](const QString &id) -> QString {
+    auto towards = [&](const QString &id) -> Key {
         const QRectF there = c.desk.windows.value(id).rect;
         if (!here.isValid() || !there.isValid())
-            return QString();
+            return Key{};
         return c.focus(tiles.contains(id) ? stepToward(tiles, from, id) : direction(here, there));
     };
 
@@ -263,7 +340,7 @@ QList<Hint> gathering(const Context &c, int pictureIndex, const QString &from) {
     if (!c.desk.foreign.value(ws).isEmpty()) {
         out << hint(tr("A window that isn't Tessera's is on workspace %1. Move it somewhere else to finish %2.")
                         .arg(c.slotText(ws), c.titles(pictureIndex)),
-                    QString());
+                    Key{});
         return out;
     }
 
@@ -275,14 +352,14 @@ QList<Hint> gathering(const Context &c, int pictureIndex, const QString &from) {
             continue;
         if (w.special) {
             out << hint(tr("%1 is hiding in the scratchpad. Show the scratchpad to find it.").arg(c.name(p.id)),
-                        c.chords("Toggle scratchpad"),
+                        c.key("Toggle scratchpad"),
                         tr("The scratchpad slides over whatever workspace you're on; the same keys hide it again."), p.id);
         } else if (w.workspace != ws) {
             out << hint(tr("%1 is on workspace %2. Go and get it.").arg(c.name(p.id), c.slotText(w.workspace)),
                         c.goTo(w.workspace), {}, p.id);
         } else if (w.floating) {
             out << hint(tr("%1 floats above the picture. Bring focus to it, then tile it.").arg(c.name(p.id)),
-                        c.chords("Focus on next window"),
+                        c.key("Focus on next window"),
                         tr("Super+arrows only walk between tiles; Alt+Tab, or the mouse, reaches a floating window."),
                         p.id);
         } else if (w.group.size() > 1) {
@@ -320,7 +397,7 @@ QList<Hint> arranging(const Context &c, int pictureIndex, const QString &focused
     const QRectF mine = tiles.value(focused);
 
     auto focusOn = [&](const QString &id, const QString &text, const QString &detail = {}) {
-        out << hint(text, mine.isValid() ? c.focus(stepToward(tiles, focused, id)) : QString(), detail, id);
+        out << hint(text, mine.isValid() ? c.focus(stepToward(tiles, focused, id)) : Key{}, detail, id);
     };
 
     if (!tree.isChain()) {
@@ -356,7 +433,7 @@ QList<Hint> arranging(const Context &c, int pictureIndex, const QString &focused
                           return false;
                       }()) {
             out << hint(tr("Make %1 a pile, so %2 can join it.").arg(c.name(focused), c.name(wrong)),
-                        c.chords("Toggle window grouping"), procedure, focused);
+                        c.key("Toggle window grouping"), procedure, focused);
         } else {
             focusOn(wrong, tr("%1 sits in the wrong branch of the picture. Focus it.").arg(c.name(wrong)), procedure);
         }
@@ -385,7 +462,7 @@ QList<Hint> arranging(const Context &c, int pictureIndex, const QString &focused
 
     if (level >= 0 && split(level) != levels.at(level).split) {
         out << hint(tr("The split beside %1 runs the wrong way. Turn it.").arg(c.name(focused)),
-                    c.chords("Toggle window split"),
+                    c.key("Toggle window split"),
                     tr("Toggling the split turns the line between this tile and its neighbour, side by side to "
                        "stacked and back."),
                     focused);
@@ -438,7 +515,7 @@ QList<Hint> arranging(const Context &c, int pictureIndex, const QString &focused
             action = (delta > 0 ? "Expand window down" : "Shrink window up") + amount;
         const QString text = side ? (grow ? tr("Make %1 wider.") : tr("Make %1 narrower."))
                                   : (grow ? tr("Make %1 taller.") : tr("Make %1 shorter."));
-        out << hint(text.arg(c.name(focused)), c.chords(action),
+        out << hint(text.arg(c.name(focused)), c.key(action),
                     side ? tr("Super+Minus and Super+Equal move the line beside it left and right; add Alt for a little, Ctrl for a lot.")
                          : tr("Super+Shift+Minus and Super+Shift+Equal move the line below it up and down; add Alt for a little, Ctrl for a lot."),
                     focused);
@@ -465,7 +542,7 @@ QList<Hint> nextPicture(const Context &c, int done) {
         if (i == done || c.e.pictures.value(i).complete)
             continue;
         out << hint(tr("Next: %1 on workspace %2.").arg(c.titles(i), c.slotText(c.desk.pictures.at(i).workspace)),
-                    c.desk.activeWorkspace == c.desk.pictures.at(i).workspace ? QString() : c.goTo(c.desk.pictures.at(i).workspace));
+                    c.desk.activeWorkspace == c.desk.pictures.at(i).workspace ? Key{} : c.goTo(c.desk.pictures.at(i).workspace));
         break;
     }
     return out;
@@ -499,10 +576,10 @@ QList<Hints::Hint> Hints::compute(const Desk &desk, const Evaluation &e, const C
                 out << hint(tr("%1 is tidied away. %2 is in the scratchpad too: focus it.").arg(c.name(f->id), c.name(wanted)),
                             c.focus(direction(w.rect, desk.windows.value(wanted).rect)), {}, wanted);
             else if (w.special)
-                out << hint(tr("%1 is tidied away. Hide the scratchpad again.").arg(c.name(f->id)), chords("Toggle scratchpad"));
+                out << hint(tr("%1 is tidied away. Hide the scratchpad again.").arg(c.name(f->id)), c.key("Toggle scratchpad"));
             else
                 out << hint(tr("%1 doesn't belong to any picture here. Tuck it into the scratchpad.").arg(c.name(f->id)),
-                            chords("Move window to scratchpad"),
+                            c.key("Move window to scratchpad"),
                             tr("The scratchpad is a hidden workspace; Super+S shows and hides it."), f->id);
             return out;
         }
@@ -521,7 +598,7 @@ QList<Hints::Hint> Hints::compute(const Desk &desk, const Evaluation &e, const C
             return out;
         }
         if (w.floating) {
-            out << hint(tr("%1 is floating. Tile it.").arg(c.name(f->id)), chords("Toggle window floating/tiling"),
+            out << hint(tr("%1 is floating. Tile it.").arg(c.name(f->id)), c.key("Toggle window floating/tiling"),
                         tr("A window joins the tiles beside the one you focused last, or the one under the pointer."),
                         f->id);
             return out;
@@ -531,7 +608,7 @@ QList<Hints::Hint> Hints::compute(const Desk &desk, const Evaluation &e, const C
             const QString leaf = desk.groupLeaf(f->id);
             const Cut::Tree tree = Cut::infer(tiles);
             if (tiles.size() == 1 || tree.end() == leaf) {
-                out << hint(tr("%1 is in a pile. Pop it out.").arg(c.name(f->id)), chords("Move active window out of group"),
+                out << hint(tr("%1 is in a pile. Pop it out.").arg(c.name(f->id)), c.key("Move active window out of group"),
                             tr("Each piece pops out into a new tile beside the pile. Super+Alt+Tab shows the next piece in it."),
                             f->id);
             } else {
@@ -557,11 +634,11 @@ QList<Hints::Hint> Hints::compute(const Desk &desk, const Evaluation &e, const C
                             c.focus(stepToward(tiles, f->id, wrong)), {}, wrong);
             else
                 out << hint(tr("%1 is still a pile of one. Take it out of the group.").arg(c.name(f->id)),
-                            chords("Move active window out of group"), {}, f->id);
+                            c.key("Move active window out of group"), {}, f->id);
             return out;
         }
         if (e.pictures.value(f->picture).complete) {
-            out << hint(tr("%1 is complete!").arg(titles(f->picture)), QString());
+            out << hint(tr("%1 is complete!").arg(titles(f->picture)), Key{});
             out << nextPicture(c, f->picture);
             return out;
         }
@@ -587,25 +664,25 @@ QList<Hints::Hint> Hints::compute(const Desk &desk, const Evaluation &e, const C
         if (desk.pictures.at(i).workspace != desk.activeWorkspace)
             continue;
         if (e.pictures.value(i).complete) {
-            out << hint(tr("%1 is complete!").arg(titles(i)), QString());
+            out << hint(tr("%1 is complete!").arg(titles(i)), Key{});
             out << nextPicture(c, i);
             return out;
         }
         if (!desk.allTiles(desk.activeWorkspace).isEmpty())
             out << hint(tr("This is where %1 goes. Focus one of its pieces to see what it needs.").arg(titles(i)),
-                        chords("Focus on left window").isEmpty() ? QString() : QStringLiteral("SUPER + ARROWS"));
+                        chords("Focus on left window").isEmpty() ? Key{} : Context::arrows());
         out << gathering(c, i, QString());
         return out;
     }
     for (const Piece &p : desk.pieces) {
         const Window pw = desk.windows.value(p.id);
         if (pw.present && !pw.special && pw.workspace == desk.activeWorkspace) {
-            out << hint(tr("%1 is here. Focus it to see where it goes.").arg(c.name(p.id)), QStringLiteral("SUPER + ARROWS"));
+            out << hint(tr("%1 is here. Focus it to see where it goes.").arg(c.name(p.id)), Context::arrows());
             return out;
         }
     }
     if (desk.scratchpadShown) {
-        out << hint(tr("This is the scratchpad. Focus a piece in it, or hide it again."), chords("Toggle scratchpad"));
+        out << hint(tr("This is the scratchpad. Focus a piece in it, or hide it again."), c.key("Toggle scratchpad"));
         return out;
     }
     out << nextPicture(c, -1);

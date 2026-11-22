@@ -96,6 +96,17 @@ char stepToward(const QHash<QString, QRectF> &tiles, const QString &from, const 
 // Workspaces as the player knows them: Super+1 to Super+0 on each monitor.
 int slot(int workspace);
 
+// How far along the pieces are, in small steps: a piece on its workspace,
+// tiled there, in its place; a stray out of the way; each tile of a picture's
+// spiral holding the right piece, and each split turned and sized right. A
+// move that raises it made measurable progress; one that lowers it undid
+// some.
+int progress(const Desk &desk, const Evaluation &evaluation);
+
+// The fewest directional focus moves from one piece's tile to another's on
+// the same workspace; -1 when there's no walk between them.
+int distance(const Desk &desk, const QString &from, const QString &to);
+
 } // namespace Puzzle
 
 // What to do next, worked out from what the player is looking at and which
@@ -108,6 +119,8 @@ struct Hint {
     QString chord;
     QString detail; // the longer explanation behind the move
     QString piece;  // the piece it's about, if any
+    QString action; // the Omarchy action it asks for ("Swap window up"), if any
+    QString family; // or the kind of move, when any of several will do
 };
 
 using Chords = std::function<QString(const QString &action)>;
