@@ -419,7 +419,7 @@ ApplicationWindow {
                                     picture: modelData
                                     Layout.fillWidth: true
                                     Layout.alignment: Qt.AlignTop
-                                    Layout.maximumWidth: game.pictures.length === 1 ? 560 : 100000
+                                    Layout.maximumWidth: game.pictures.length === 1 ? 680 : 100000
                                 }
                             }
                         }
