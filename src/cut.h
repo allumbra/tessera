@@ -44,9 +44,13 @@ struct Options {
 };
 
 // A cut of `pieces` pieces, the same for the same seed. Splits start out as
-// dwindle would make them; some are turned or moved off centre by chance,
-// but never so that a piece ends up thinner than a sliver.
-Chain generate(int pieces, quint32 seed, const Options &options = {});
+// dwindle would make them on a screen of this shape; some are turned or
+// moved off centre by chance, but never so that a piece ends up thinner than
+// a sliver.
+Chain generate(int pieces, quint32 seed, const Options &options = {}, const QSizeF &screen = QSizeF(16, 9));
+
+// Whether a cut has a piece too thin to see or handle.
+bool hasSliver(const Chain &chain);
 
 // The smallest share of the picture's width or height any piece takes.
 double thinnest(const Chain &chain);

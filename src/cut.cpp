@@ -50,25 +50,29 @@ double Cut::thinnest(const Chain &chain) {
     return least;
 }
 
-Chain Cut::generate(int pieces, quint32 seed, const Options &options) {
+bool Cut::hasSliver(const Chain &chain) {
+    // A sixth of the picture is the narrowest a tile gets while there are
+    // few pieces; long spirals are allowed to get a bit thinner.
+    return thinnest(chain) < (chain.pieces() <= 4 ? 0.16 : 0.11);
+}
+
+Chain Cut::generate(int pieces, quint32 seed, const Options &options, const QSizeF &screen) {
     QRandomGenerator random(seed);
     static const double ratios[] = {1.0 / 3, 0.4, 0.6, 2.0 / 3};
     // A handful of tries is plenty to find one with no sliver in it; the
     // plain dealt shape is always acceptable, so it's the last resort.
     for (int attempt = 0; attempt < 64; ++attempt) {
-        Chain chain = dealt(pieces);
+        Chain chain = dealt(pieces, screen);
         for (Level &level : chain.levels) {
             if (random.generateDouble() < options.flipChance)
                 level.split = level.split == Split::Side ? Split::Stack : Split::Side;
             if (random.generateDouble() < options.ratioChance)
                 level.ratio = ratios[random.bounded(4)];
         }
-        // A sixth of the picture is the narrowest a tile gets while there
-        // are few pieces; long spirals are allowed to get a bit thinner.
-        if (thinnest(chain) >= (pieces <= 4 ? 0.16 : 0.11))
+        if (!hasSliver(chain))
             return chain;
     }
-    return dealt(pieces);
+    return dealt(pieces, screen);
 }
 
 // ── Reading a tree back from rectangles ────────────────────────────────────

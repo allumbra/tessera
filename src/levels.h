@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QHash>
 #include <QList>
+#include <QSizeF>
 #include <QString>
 #include <QStringList>
 
@@ -15,6 +17,8 @@ struct Work {
     const char *title;  // the artwork's full title
     const char *artist;
     const char *year;
+    const char *url;     // the file it was made from
+    const char *license;
 };
 
 const QList<Work> &all();
@@ -87,9 +91,30 @@ struct Tier {
 };
 const QList<Tier> &tiers();
 
-// A full puzzle of a tier, shuffled by `seed`: two or three pictures, each
-// on its own workspace, using every move the lessons teach.
-Level puzzle(int tier, quint32 seed);
+// A full puzzle of a tier, shuffled by `seed`, for a screen of this shape:
+// two or three pictures, each on its own workspace. Exhibition and Museum
+// deals always need every family of moves at least once: swap, focus, a
+// workspace switch, carrying a window over, turning a split, tiling a
+// floating window, a pile to take apart, a resize each way, the scratchpad.
+// The pictures' art keys are placeholders ("0", "1", …, strays "s0") until
+// the game has made the pictures.
+Level puzzle(int tier, quint32 seed, const QSizeF &screen = QSizeF(16, 9));
+
+// A two-picture puzzle weighted towards the moves the player is weakest
+// at: `weakness` maps a command family to 0 (mastered) .. 1 (needs work).
+Level practice(quint32 seed, const QHash<QString, double> &weakness, const QSizeF &screen = QSizeF(16, 9));
+
+// A lesson made for a screen of this shape. On a portrait screen dwindle
+// stacks where it would split side by side, so the cuts turn with it; the
+// two resize lessons keep their direction, since that's what they teach.
+Level forScreen(const Level &level, const QSizeF &screen);
+
+// The fewest changing moves a deal can be solved in: one per piece that has
+// to come home, be tiled, leave the scratchpad or come out of a pile, one
+// per stray, one per split that has to turn or be resized, and one swap per
+// piece dealt out of order. Looking around (focus, switching workspaces,
+// showing the scratchpad) isn't counted.
+int par(const Level &level, const QSizeF &screen = QSizeF(16, 9));
 
 // Total workspaces a level needs.
 int workspacesNeeded(const Level &level);
