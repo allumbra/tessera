@@ -625,6 +625,25 @@ private slots:
         QCOMPARE(rig.game->pieceModel().rowCount(), 0);
     }
 
+    // Space on a solved lesson's piece goes on to the next lesson, whose
+    // pieces aren't dealt yet: the board comes into view, not an empty
+    // workspace.
+    void nextFromAPieceShowsTheBoard() {
+        Rig rig(true);
+        QVERIFY(rig.waitFor("menu"));
+        rig.game->playLesson(0);
+        rig.game->begin();
+        Player player(*rig.game, rig.desktop);
+        QVERIFY(player.solve());
+        QCOMPARE(rig.game->state(), QString("solved"));
+        QVERIFY(rig.desktop.active != rig.board);
+        rig.game->showBoard();
+        rig.game->primary();
+        QCOMPARE(rig.desktop.active, Hypr::address(rig.board));
+        QCOMPARE(rig.game->state(), QString("intro"));
+        QVERIFY(!rig.desktop.touchedForeign);
+    }
+
     void pilesAreOnlyMadeOnAFocusedPiece() {
         Rig rig(true);
         QVERIFY(rig.waitFor("menu"));

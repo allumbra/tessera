@@ -140,6 +140,7 @@ public:
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void primary();
+    Q_INVOKABLE void showBoard();
     Q_INVOKABLE void playLesson(int index);
     Q_INVOKABLE void playTier(int index);
     Q_INVOKABLE void begin();

@@ -85,7 +85,9 @@ Window {
     Shortcut { sequence: "Return"; context: Qt.WindowShortcut; enabled: win.confirmQuit; onActivated: win.quitRequested() }
     Shortcut { sequence: "N"; context: Qt.WindowShortcut; enabled: win.confirmQuit; onActivated: win.confirmQuit = false }
     // Solved, the board's keys work here too, so there's no need to go back.
-    Shortcut { sequence: "Space"; context: Qt.WindowShortcut; enabled: win.solved; onActivated: game.primary() }
+    // Next closes these pieces, so the board comes along into view.
+    Shortcut { sequence: "Space"; context: Qt.WindowShortcut; enabled: win.solved
+        onActivated: { game.showBoard(); game.primary() } }
     Shortcut { sequence: "R"; context: Qt.WindowShortcut; enabled: win.solved; onActivated: game.restart() }
 
     Image {

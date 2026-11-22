@@ -407,6 +407,19 @@ void Game::primary() {
     }
 }
 
+// Brings the board into view, for keys pressed on a piece whose picture is
+// about to close: otherwise the player is left on an empty workspace. Only
+// the game's own board, checked against its process id, is ever focused.
+void Game::showBoard() {
+    if (m_board.isEmpty())
+        return;
+    refresh();
+    if (client(m_board).value("pid").toInteger() != m_pid)
+        return;
+    QString error;
+    m_hyprctl->focusWindow(m_board, &error);
+}
+
 void Game::playLesson(int index) {
     if (index < 0 || index >= Levels::lessons().size() || (m_state == "error" && m_sourceFailed))
         return;

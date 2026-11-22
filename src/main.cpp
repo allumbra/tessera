@@ -33,7 +33,7 @@ static QString readBindings(QString *problem) {
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("tessera");
-    app.setApplicationVersion("0.1.1");
+    app.setApplicationVersion("0.1.2");
 
     // Matches every window, the board and each piece, to tessera.desktop:
     // the compositor sees the Wayland app id "tessera", and the launcher
