@@ -12,10 +12,13 @@
 #include <functional>
 
 #include "bindings.h"
+#include "commands.h"
+#include "gallery.h"
 #include "hyprland.h"
 #include "levels.h"
 #include "progress.h"
 #include "puzzle.h"
+#include "stats.h"
 
 // The pieces on the desktop. Each one is a window of Tessera's own, made by
 // QML from a row here, so adding or removing a row opens or closes exactly
@@ -27,9 +30,10 @@ public:
     struct Row {
         QString id, title, image, label, address;
         QRectF cell;
+        QSize imageSize{1600, 900}; // the picture's pixels, which `cell` slices
         bool focused = false, inPlace = false;
     };
-    enum Role { IdRole = Qt::UserRole + 1, TitleRole, ImageRole, LabelRole, CellRole, FocusedRole, InPlaceRole };
+    enum Role { IdRole = Qt::UserRole + 1, TitleRole, ImageRole, LabelRole, CellRole, FocusedRole, InPlaceRole, ImageSizeRole };
 
     using QAbstractListModel::QAbstractListModel;
 
@@ -80,6 +84,13 @@ class Game : public QObject {
     Q_PROPERTY(QString toast READ toast NOTIFY toastChanged)
     Q_PROPERTY(QVariantList cheatSheet READ cheatSheet NOTIFY changed)
     Q_PROPERTY(QObject *pieces READ pieces CONSTANT)
+    Q_PROPERTY(bool practice READ practice NOTIFY changed)
+    Q_PROPERTY(QString pictureNote READ pictureNote NOTIFY changed)
+    Q_PROPERTY(QVariantList commandStats READ commandStats NOTIFY statsChanged)
+    Q_PROPERTY(QVariantList recentRuns READ recentRuns NOTIFY statsChanged)
+    Q_PROPERTY(QVariantMap summary READ summary NOTIFY changed)
+    Q_PROPERTY(int moves READ moves NOTIFY changed)
+    Q_PROPERTY(int par READ par NOTIFY changed)
 
 public:
     struct Timings {
@@ -90,9 +101,16 @@ public:
         int tier1 = 12000;    // lessons: the hint says what to do
         int tier2 = 30000;    // and shows the keys
         int tier3 = 60000;    // and explains
+        int practiceKeys = 6000; // practice: each situation's keys after this
     };
 
     Game(EventSource *events, Hyprctl *hyprctl, const QString &progressPath = {}, QObject *parent = nullptr);
+    ~Game() override;
+
+    // Where pictures come from; without one, only the built-in works, made
+    // in memory.
+    void setGallery(Gallery *gallery);
+    Gallery *gallery() const { return m_gallery; }
 
     void setBindings(const QString &menuText, const QString &problem = {});
     void setTimings(const Timings &timings) { m_timings = timings; }
@@ -132,6 +150,26 @@ public:
     QVariantList cheatSheet() const;
     QObject *pieces() { return &m_pieces; }
     PieceModel &pieceModel() { return m_pieces; }
+    bool practice() const { return m_practice; }
+    QString pictureNote() const { return m_pictureNote; }
+    QVariantList commandStats() const;
+    QVariantList recentRuns() const;
+    QVariantMap summary() const { return m_summary; }
+    int moves() const { return m_runMoves; }
+    int par() const { return m_par; }
+    const Stats &stats() const { return m_stats; }
+    Stats &stats() { return m_stats; }
+    // Every move recognised in this run, with how it was judged.
+    struct Judged {
+        Commands::Move move;
+        Commands::Verdict verdict;
+        bool aided = false;
+        qint64 reaction = 0;
+    };
+    const QList<Judged> &judged() const { return m_judged; }
+    // The pictures this level is made of, by art key.
+    const QHash<QString, Gallery::Prepared> &prepared() const { return m_prepared; }
+    QSizeF screen() const { return m_area; }
     const Puzzle::Desk &desk() const { return m_desk; }
     const Puzzle::Evaluation &evaluation() const { return m_eval; }
     const QList<Hints::Hint> &currentHints() const { return m_hints; }
@@ -143,6 +181,8 @@ public:
     Q_INVOKABLE void showBoard();
     Q_INVOKABLE void playLesson(int index);
     Q_INVOKABLE void playTier(int index);
+    Q_INVOKABLE void playPractice();
+    Q_INVOKABLE bool practiceUnlocked() const { return puzzlesUnlocked(); }
     Q_INVOKABLE void begin();
     Q_INVOKABLE void restart();
     Q_INVOKABLE void toMenu();
@@ -161,6 +201,7 @@ signals:
     void tick();
     void toastChanged();
     void solved();
+    void statsChanged();
 
 private:
     struct Action {
@@ -199,15 +240,30 @@ private:
                 std::function<void()> retry = {});
     void startPlaying();
     void clearPieces();
+    QSizeF screenArea();
+    void prepared(const Gallery::Result &result);
 
     // Playing
     void evaluate();
     void updateHints();
     void finish();
+    Commands::Snapshot snapshot();
+    void judge(const Commands::Move &move, const Commands::Situation &before, const Commands::Situation &after);
+    void saveStats();
+
+    // Pictures
+    const Gallery::Prepared *preparedFor(const QString &art) const;
+    QString pictureName(int picture) const;
+    QString arrowChord(const QStringList &actions) const;
+    QString numberedChord(const QString &action) const;
+    QString familyChord(const QString &family) const;
 
     EventSource *m_events;
     Hyprctl *m_hyprctl;
     Progress m_progress;
+    Stats m_stats;
+    std::unique_ptr<Gallery> m_ownGallery;
+    Gallery *m_gallery = nullptr;
     QList<Binding> m_bindings;
     Timings m_timings;
     qint64 m_pid;
@@ -217,7 +273,10 @@ private:
 
     QString m_state = "connecting";
     QString m_error, m_notice, m_saveError, m_toast, m_objective, m_objectiveChord, m_focusedPiece;
-    Levels::Level m_level;
+    Levels::Level m_level;     // the level being played, its pictures made
+    Levels::Level m_levelSpec; // as it was chosen, before the pictures
+    quint32 m_levelSeed = 1;
+    bool m_practice = false;
     int m_levelIndex = 0;
     int m_hintTier = 0, m_askedTier = 0, m_stars = 0;
     bool m_newBest = false;
@@ -249,4 +308,20 @@ private:
 
     QTimer m_poll, m_tick, m_spawnTimeout, m_soon;
     int m_spawnTries = 0;
+
+    // The pictures
+    QHash<QString, Gallery::Prepared> m_prepared;
+    QSizeF m_area{1920, 1054};
+    double m_scale = 1;
+    QString m_pictureNote;
+
+    // The player's moves
+    Commands::Detector m_detector;
+    QList<Judged> m_judged;
+    QString m_hintKey;               // the recommendation now, to tell when it changes
+    qint64 m_situationSince = 0, m_lastMoveAt = 0;
+    bool m_helpAsked = false;
+    int m_runMoves = 0, m_runLooks = 0, m_par = 0;
+    QVariantMap m_summary;
+    QString m_statsError;
 };

@@ -12,6 +12,7 @@ Window {
     required property string label
     required property string image
     required property rect cell
+    required property size imageSize
     required property bool inPlace
     // The hint strip shows on the focused piece until H hides it.
     property bool hintWanted: true
@@ -90,16 +91,24 @@ Window {
         onActivated: { game.showBoard(); game.primary() } }
     Shortcut { sequence: "R"; context: Qt.WindowShortcut; enabled: win.solved; onActivated: game.restart() }
 
-    Image {
-        id: picture
+    // The slice: the whole picture (made to the monitor's shape) scaled so
+    // this piece's cell fills the window, and the rest clipped away. Images
+    // from the provider don't take a clip rectangle, so it's done here.
+    Item {
         anchors.fill: parent
-        source: win.image
-        // The slice, in the picture's own pixels (every picture is 1600 by
-        // 900), scaled to whatever tile the window has now.
-        sourceClipRect: Qt.rect(win.cell.x * 1600, win.cell.y * 900, win.cell.width * 1600, win.cell.height * 900)
-        fillMode: Image.Stretch
-        smooth: true
-        asynchronous: false
+        clip: true
+        Image {
+            id: picture
+            width: win.width / Math.max(0.001, win.cell.width)
+            height: win.height / Math.max(0.001, win.cell.height)
+            x: -win.cell.x * width
+            y: -win.cell.y * height
+            source: win.image
+            sourceSize: win.imageSize
+            fillMode: Image.Stretch
+            smooth: true
+            asynchronous: false
+        }
     }
 
     Item {
@@ -262,6 +271,35 @@ Window {
                     text: win.artwork ? qsTr("%1 · %2 of %3 pictures done").arg(win.artwork.title).arg(done).arg(game.pictures.length) : ""
                     color: "#f2f2f2"
                     font.pixelSize: Math.round(13 * win.unit)
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, win.width - Math.round(48 * win.unit))
+                }
+                // Moves against par, and the best and worst kind of move.
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: win.solved && game.summary.moves !== undefined && game.summary.par > 0 && win.height >= 200
+                    text: game.summary.moves !== undefined
+                          ? qsTr("%n move(s) · par %1", "", game.summary.moves).arg(Number(game.summary.par).toLocaleString(Qt.locale(), 'f', 0))
+                          : ""
+                    color: "#f2f2f2"
+                    font.pixelSize: Math.round(14 * win.unit)
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: win.solved && (game.summary.best || "") !== "" && win.height >= 240 && win.width >= 240
+                    text: qsTr("Best: %1").arg(game.summary.best || "")
+                    color: win.accent
+                    font.pixelSize: Math.round(12 * win.unit)
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, win.width - Math.round(48 * win.unit))
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: win.solved && (game.summary.worst || "") !== "" && win.height >= 240 && win.width >= 240
+                    text: qsTr("Needs practice: %1").arg(game.summary.worst || "")
+                    color: "#e0a060"
+                    font.pixelSize: Math.round(12 * win.unit)
                     elide: Text.ElideRight
                     width: Math.min(implicitWidth, win.width - Math.round(48 * win.unit))
                 }

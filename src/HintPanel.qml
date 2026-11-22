@@ -32,6 +32,14 @@ Rectangle {
             wrapMode: Text.Wrap
             font.pixelSize: 15
         }
+        Text {
+            Layout.fillWidth: true
+            visible: game.state === "preparing" && gallery.status !== ""
+            text: "⇅ " + gallery.status
+            color: "#a8c8f0"
+            wrapMode: Text.Wrap
+            font.pixelSize: 13
+        }
         Keycaps {
             Layout.fillWidth: true
             visible: game.objectiveChord !== ""

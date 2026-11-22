@@ -4,8 +4,11 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QRandomGenerator>
 #include <algorithm>
+
+#include "collage.h"
 
 using Levels::Start;
 
@@ -25,13 +28,14 @@ QVariant PieceModel::data(const QModelIndex &index, int role) const {
     case CellRole: return r.cell;
     case FocusedRole: return r.focused;
     case InPlaceRole: return r.inPlace;
+    case ImageSizeRole: return r.imageSize;
     }
     return {};
 }
 
 QHash<int, QByteArray> PieceModel::roleNames() const {
     return {{IdRole, "pieceId"}, {TitleRole, "windowTitle"}, {ImageRole, "image"}, {LabelRole, "label"},
-            {CellRole, "cell"}, {FocusedRole, "focused"}, {InPlaceRole, "inPlace"}};
+            {CellRole, "cell"}, {FocusedRole, "focused"}, {InPlaceRole, "inPlace"}, {ImageSizeRole, "imageSize"}};
 }
 
 PieceModel::Row *PieceModel::find(const QString &id) {
@@ -84,10 +88,19 @@ void PieceModel::relabel(const std::function<QString(const QString &)> &label) {
 
 // ── Game ──────────────────────────────────────────────────────────────────
 
+// Stats live beside the progress file, so a test's temporary progress keeps
+// its stats there too.
+static QString statsPathFor(const QString &progressPath) {
+    return progressPath.isEmpty() ? QString() : QFileInfo(progressPath).absolutePath() + "/stats.json";
+}
+
 Game::Game(EventSource *events, Hyprctl *hyprctl, const QString &progressPath, QObject *parent)
     : QObject(parent), m_events(events), m_hyprctl(hyprctl), m_progress(progressPath),
+      m_stats(statsPathFor(progressPath)), m_ownGallery(std::make_unique<Gallery>()),
       m_pid(QCoreApplication::applicationPid()) {
+    m_gallery = m_ownGallery.get();
     m_progress.load();
+    m_stats.load();
     m_now = [] { return QDateTime::currentMSecsSinceEpoch(); };
     m_level = Levels::lessons().first();
     connect(m_events, &EventSource::received, this, &Game::handleEvent);
@@ -116,6 +129,12 @@ Game::Game(EventSource *events, Hyprctl *hyprctl, const QString &progressPath, Q
         if (m_state == "playing")
             evaluate();
     });
+}
+
+Game::~Game() = default;
+
+void Game::setGallery(Gallery *gallery) {
+    m_gallery = gallery ? gallery : m_ownGallery.get();
 }
 
 void Game::setBindings(const QString &menuText, const QString &problem) {
@@ -192,6 +211,13 @@ void Game::save() {
     m_saveError = m_progress.save(&error) ? QString() : tr("Can't save progress: %1").arg(error);
 }
 
+void Game::saveStats() {
+    QString error;
+    if (!m_stats.save(&error))
+        m_saveError = tr("Can't save stats: %1").arg(error);
+    emit statsChanged();
+}
+
 QString Game::levelTitle() const { return tr_("Levels", m_level.title); }
 QString Game::teaches() const { return tr_("Levels", m_level.teaches); }
 QString Game::intro() const { return tr_("Levels", m_level.intro); }
@@ -244,11 +270,48 @@ QVariantList Game::tiers() const {
     return out;
 }
 
+const Gallery::Prepared *Game::preparedFor(const QString &art) const {
+    const auto it = m_prepared.find(art);
+    return it == m_prepared.end() ? nullptr : &it.value();
+}
+
+static QString creditTitle(const Gallery::Prepared &p, int k) {
+    const QString source = p.sources.value(k);
+    if (source.startsWith("builtin:"))
+        if (const auto *work = Art::find(source.mid(8)))
+            return tr_("Art", work->title);
+    return p.credits.value(k).title;
+}
+
 QString Game::pictureTitle(int picture) const {
     if (picture < 0 || picture >= m_desk.pictures.size())
         return {};
-    const auto *work = Art::find(m_desk.pictures.at(picture).key);
-    return work ? tr_("Art", work->title) : QString();
+    const auto *p = preparedFor(m_desk.pictures.at(picture).key);
+    if (!p)
+        return {};
+    const QString first = creditTitle(*p, 0);
+    return p->collage ? tr("%1 and %n more", "", int(p->credits.size()) - 1).arg(first) : first;
+}
+
+// The short name a picture's pieces go by: "Wave" for "Wave 3". Two pictures
+// with the same name get told apart, since window titles must differ.
+QString Game::pictureName(int picture) const {
+    auto base = [this](int i) -> QString {
+        const auto *p = preparedFor(m_desk.pictures.value(i).key);
+        if (!p)
+            return m_desk.pictures.value(i).key;
+        if (!p->builtinName.isEmpty())
+            if (const auto *work = Art::find(p->builtinName))
+                return tr_("Art", work->name);
+        return p->name;
+    };
+    const QString name = base(picture);
+    int same = 0;
+    for (int i = 0; i < picture; ++i)
+        if (base(i) == name)
+            ++same;
+    static const char *numerals[] = {"", " II", " III", " IV", " V"};
+    return name + QString::fromLatin1(numerals[std::min(same, 4)]);
 }
 
 QString Game::pieceName(const QString &id) const {
@@ -257,15 +320,14 @@ QString Game::pieceName(const QString &id) const {
         return {};
     if (p->picture < 0)
         return tr("The stray piece");
-    const auto *work = Art::find(p->art);
-    return tr("%1 %2").arg(work ? tr_("Art", work->name) : p->art).arg(p->index + 1);
+    return tr("%1 %2").arg(pictureName(p->picture)).arg(p->index + 1);
 }
 
 QVariantList Game::pictures() const {
     QVariantList out;
     for (int i = 0; i < m_desk.pictures.size(); ++i) {
         const auto &picture = m_desk.pictures.at(i);
-        const auto *work = Art::find(picture.key);
+        const auto *prep = preparedFor(picture.key);
         const auto cells = picture.chain.layout();
         QVariantList cellList;
         for (const auto &piece : m_desk.pieces)
@@ -275,11 +337,33 @@ QVariantList Game::pictures() const {
                                         {"placed", m_eval.pieces.value(piece.id).inPlace},
                                         {"number", piece.index + 1}};
             }
+        QVariantList credits;
+        if (prep)
+            for (int k = 0; k < prep->credits.size(); ++k) {
+                const Credit &c = prep->credits.at(k);
+                // The player's own files say so, and nothing more: their
+                // path stays on this machine and off the board.
+                credits << QVariantMap{{"title", creditTitle(*prep, k)},
+                                       {"artist", c.artist},
+                                       {"date", c.date},
+                                       {"license", c.local ? tr("Your own picture")
+                                                   : c.license == "Public domain (CC0)" ? tr("Public domain (CC0)")
+                                                   : c.license == "Public domain" ? tr("Public domain")
+                                                                                  : c.license},
+                                       {"origin", c.local ? tr("Your folder") : c.origin},
+                                       {"url", c.local ? QString() : c.url},
+                                       {"local", c.local}};
+            }
+        const Credit first = prep ? prep->credits.value(0) : Credit();
         const auto state = m_eval.pictures.value(i);
-        out << QVariantMap{{"title", work ? tr_("Art", work->title) : picture.key},
-                           {"artist", work ? QString::fromUtf8(work->artist) : QString()},
-                           {"year", work ? QString::fromUtf8(work->year) : QString()},
-                           {"image", Art::image(picture.key)},
+        out << QVariantMap{{"title", pictureTitle(i)},
+                           {"artist", prep && !prep->collage ? first.artist : QString()},
+                           {"year", prep && !prep->collage ? first.date : QString()},
+                           {"image", prep ? prep->url() : QString()},
+                           {"aspect", prep && !prep->size.isEmpty() ? double(prep->size.width()) / prep->size.height()
+                                                                     : 16.0 / 9.0},
+                           {"collage", prep && prep->collage},
+                           {"credits", credits},
                            {"slot", Puzzle::slot(picture.workspace)},
                            {"placed", state.placed},
                            {"total", picture.chain.pieces()},
@@ -317,29 +401,53 @@ qint64 Game::elapsed() const {
     return 0;
 }
 
-qint64 Game::best() const { return m_level.lesson ? 0 : m_progress.best(m_level.id); }
+qint64 Game::best() const { return m_level.lesson || m_practice ? 0 : m_progress.best(m_level.id); }
+
+// Four arrow chords that differ only in the arrow read as one.
+QString Game::arrowChord(const QStringList &actions) const {
+    QString base;
+    for (const auto &a : actions) {
+        const QString c = chord(a);
+        const int plus = c.lastIndexOf(" + ");
+        if (plus < 0 || c.contains(" / "))
+            return chord(actions.first());
+        if (base.isEmpty())
+            base = c.left(plus);
+        else if (base != c.left(plus))
+            return chord(actions.first());
+    }
+    return base + " + ARROWS";
+}
+
+QString Game::numberedChord(const QString &action) const {
+    QString c = chord(action);
+    return c.endsWith(" 1") ? c.left(c.size() - 1) + QStringLiteral("1…0") : c;
+}
+
+QString Game::familyChord(const QString &family) const {
+    if (family == "focus")
+        return arrowChord({"Focus on left window", "Focus on right window", "Focus on above window", "Focus on below window"});
+    if (family == "swap")
+        return arrowChord({"Swap window to the left", "Swap window to the right", "Swap window up", "Swap window down"});
+    if (family == "group-in")
+        return arrowChord({"Move window to group on left", "Move window to group on right", "Move window to group on top",
+                           "Move window to group on bottom"});
+    if (family == "workspace")
+        return numberedChord("Switch to workspace 1");
+    if (family == "move-workspace")
+        return numberedChord("Move window to workspace 1");
+    if (family == "resize-x")
+        return chord("Expand window left") + " / " + chord("Shrink window left");
+    if (family == "resize-y")
+        return chord("Shrink window up") + " / " + chord("Expand window down");
+    const auto *f = Commands::family(family);
+    return f ? chord(f->actions.first()) : QString();
+}
 
 QVariantList Game::cheatSheet() const {
     auto row = [](const QString &name, const QString &chord) { return QVariantMap{{"name", name}, {"chord", chord}}; };
-    // Four arrow chords that differ only in the arrow read as one.
-    auto arrows = [this](const QStringList &actions) {
-        QString base;
-        for (const auto &a : actions) {
-            const QString c = chord(a);
-            const int plus = c.lastIndexOf(" + ");
-            if (plus < 0 || c.contains(" / "))
-                return chord(actions.first());
-            if (base.isEmpty())
-                base = c.left(plus);
-            else if (base != c.left(plus))
-                return chord(actions.first());
-        }
-        return base + " + ARROWS";
-    };
-    auto numbered = [this](const QString &action) {
-        QString c = chord(action);
-        return c.endsWith(" 1") ? c.left(c.size() - 1) + QStringLiteral("1…0") : c;
-    };
+    auto arrows = [this](const QStringList &actions) { return arrowChord(actions); };
+    auto numbered = [this](const QString &action) { return numberedChord(action); };
     return {
         row(tr("Focus a window"), arrows({"Focus on left window", "Focus on right window", "Focus on above window",
                                           "Focus on below window"})),
@@ -360,11 +468,74 @@ QVariantList Game::cheatSheet() const {
         row(tr("Put a window in the scratchpad"), chord("Move window to scratchpad")),
         row(tr("Hint"), "H"),
         row(tr("Start, next"), "SPACE"),
+        row(tr("Your shortcut stats"), "S"),
+        row(tr("Where pictures come from"), "P"),
         row(tr("Deal again"), "R"),
         row(tr("Levels"), "ESCAPE"),
         row(tr("These shortcuts"), "?"),
         row(tr("Quit"), "Q"),
     };
+}
+
+static QString levelName(Stats::Level level) {
+    switch (level) {
+    case Stats::None: return QCoreApplication::translate("Game", "Not yet");
+    case Stats::Novice: return QCoreApplication::translate("Game", "Novice");
+    case Stats::Learning: return QCoreApplication::translate("Game", "Learning");
+    case Stats::Practised: return QCoreApplication::translate("Game", "Practised");
+    case Stats::Fluent: return QCoreApplication::translate("Game", "Fluent");
+    case Stats::Master: return QCoreApplication::translate("Game", "Master");
+    }
+    return {};
+}
+
+// One row per kind of move, in the order a puzzle calls for them most, so
+// the many focus moves and swaps read as expected rather than as a lean.
+QVariantList Game::commandStats() const {
+    QVariantList out;
+    double total = 0;
+    for (const auto &f : Commands::families())
+        total += f.expected;
+    for (const auto &f : Commands::families()) {
+        const Stats::Command c = m_stats.command(f.id);
+        const Stats::Proficiency p = Stats::proficiency(c);
+        const int judged = c.good + c.neutral + c.detour;
+        out << QVariantMap{{"id", f.id},
+                           {"name", tr_("Game", f.name)},
+                           {"chord", familyChord(f.id)},
+                           {"level", int(p.level)},
+                           {"levelName", levelName(p.level)},
+                           {"score", p.score},
+                           {"uses", c.uses},
+                           {"good", judged ? double(c.good) / judged : 0.0},
+                           {"neutral", judged ? double(c.neutral) / judged : 0.0},
+                           {"detour", judged ? double(c.detour) / judged : 0.0},
+                           {"aided", judged ? double(c.aided) / judged : 0.0},
+                           {"reaction", Stats::median(c.reactions)},
+                           {"expected", f.expected / total},
+                           {"last", c.last}};
+    }
+    return out;
+}
+
+QVariantList Game::recentRuns() const {
+    QVariantList out;
+    const auto &runs = m_stats.runs();
+    for (int i = runs.size() - 1; i >= 0 && out.size() < 8; --i) {
+        const auto &r = runs.at(i);
+        QString title = r.level;
+        if (r.practice)
+            title = tr_("Levels", "Practice weak spots");
+        for (const auto &t : Levels::tiers())
+            if (t.id == r.level)
+                title = tr_("Levels", t.title);
+        for (const auto &l : Levels::lessons())
+            if (l.id == r.level)
+                title = tr_("Levels", l.title);
+        out << QVariantMap{{"title", title}, {"when", r.when}, {"ms", r.ms}, {"moves", r.moves},
+                           {"par", r.par}, {"looks", r.looks}, {"lesson", r.lesson}};
+    }
+    return out;
 }
 
 QList<int> Game::workspaces() const {
@@ -396,7 +567,9 @@ void Game::primary() {
     } else if (m_state == "intro") {
         begin();
     } else if (m_state == "solved") {
-        if (m_level.lesson && m_levelIndex + 1 < Levels::lessons().size())
+        if (m_practice)
+            toMenu();
+        else if (m_level.lesson && m_levelIndex + 1 < Levels::lessons().size())
             playLesson(m_levelIndex + 1);
         else if (m_level.lesson)
             playTier(0);
@@ -416,6 +589,8 @@ void Game::showBoard() {
     refresh();
     if (client(m_board).value("pid").toInteger() != m_pid)
         return;
+    // The focus change that follows is the game's, not a move to judge.
+    m_detector.suppress(m_now() + 400);
     QString error;
     m_hyprctl->focusWindow(m_board, &error);
 }
@@ -428,7 +603,9 @@ void Game::playLesson(int index) {
     clearPieces();
     m_desk = {};
     m_eval = {};
-    m_level = Levels::lessons().at(index);
+    m_practice = false;
+    m_levelSpec = m_level = Levels::forScreen(Levels::lessons().at(index), screenArea());
+    m_levelSeed = quint32(index + 1);
     m_levelIndex = index;
     m_progress.setCurrent(m_level.id);
     save();
@@ -444,8 +621,24 @@ void Game::playTier(int index) {
     m_desk = {};
     m_eval = {};
     const quint32 seed = m_fixedSeed ? m_seed : QRandomGenerator::global()->generate();
-    m_level = Levels::puzzle(index, seed);
+    m_practice = false;
+    m_levelSpec = m_level = Levels::puzzle(index, seed, screenArea());
+    m_levelSeed = seed;
     m_levelIndex = index;
+    setState("intro");
+}
+
+void Game::playPractice() {
+    if ((m_state == "error" && m_sourceFailed) || !puzzlesUnlocked())
+        return;
+    clearPieces();
+    m_desk = {};
+    m_eval = {};
+    const quint32 seed = m_fixedSeed ? m_seed : QRandomGenerator::global()->generate();
+    m_practice = true;
+    m_levelSpec = m_level = Levels::practice(seed, m_stats.weakness(), screenArea());
+    m_levelSeed = seed;
+    m_levelIndex = Levels::tiers().size();
     setState("intro");
 }
 
@@ -462,7 +655,54 @@ void Game::begin() {
     m_newBest = false;
     m_stars = 0;
     m_toast.clear();
+    m_summary.clear();
+    m_pictureNote.clear();
+    m_prepared.clear();
     emit toastChanged();
+
+    // The pictures are made first, to the shape of the board's monitor.
+    m_level = m_levelSpec;
+    m_area = screenArea();
+    Gallery::Request request;
+    for (const auto &spec : m_level.pictures)
+        request.musts << (m_level.lesson ? spec.art : QString());
+    request.strays = m_level.strays.size();
+    request.area = m_area;
+    request.pixels = Collage::renderSize(m_area, m_scale);
+    request.seed = m_levelSeed;
+    request.lesson = m_level.lesson;
+    m_objective = tr("Getting the pictures ready…");
+    m_objectiveChord.clear();
+    setState("preparing");
+    const int generation = m_generation;
+    m_gallery->prepare(request, [this, generation](const Gallery::Result &result) {
+        if (generation == m_generation && m_state == "preparing")
+            prepared(result);
+    });
+}
+
+void Game::prepared(const Gallery::Result &result) {
+    if (!result.ok() || result.pictures.size() < m_level.pictures.size() || result.strays.size() < m_level.strays.size()) {
+        fail(tr("Couldn't make the pictures for this puzzle. Press R to try again."));
+        return;
+    }
+    // Each picture's art key becomes the picture made for it; the same
+    // picture twice (a tiny folder) still needs pieces of its own.
+    m_prepared.clear();
+    auto keep = [this](Gallery::Prepared p) {
+        const QString base = p.key;
+        for (int n = 2; m_prepared.contains(p.key); ++n)
+            p.key = base + QString("x%1").arg(n);
+        m_prepared.insert(p.key, p);
+        return p.key;
+    };
+    for (int i = 0; i < m_level.pictures.size(); ++i)
+        m_level.pictures[i].art = keep(result.pictures.at(i));
+    for (int k = 0; k < m_level.strays.size(); ++k)
+        m_level.strays[k].art = keep(result.strays.at(k));
+    m_pictureNote = result.note;
+    if (!m_pictureNote.isEmpty())
+        say(m_pictureNote);
 
     for (int i = 0; i < m_level.pictures.size(); ++i) {
         const auto &spec = m_level.pictures.at(i);
@@ -486,15 +726,22 @@ void Game::restart() {
         return;
     }
     if (m_state == "playing" || m_state == "dealing" || m_state == "waiting" || m_state == "solved"
-        || m_state == "error") {
+        || m_state == "error" || m_state == "preparing") {
         // A puzzle deals afresh, shuffled anew; a lesson is the same again.
-        if (!m_level.lesson && !m_fixedSeed)
-            m_level = Levels::puzzle(m_levelIndex, QRandomGenerator::global()->generate());
+        if (!m_level.lesson && !m_fixedSeed) {
+            m_levelSeed = QRandomGenerator::global()->generate();
+            m_levelSpec = m_practice ? Levels::practice(m_levelSeed, m_stats.weakness(), screenArea())
+                                     : Levels::puzzle(m_levelIndex, m_levelSeed, screenArea());
+        }
         begin();
     }
 }
 
 void Game::toMenu() {
+    if (m_state == "preparing")
+        m_gallery->cancel();
+    if (m_state == "playing")
+        saveStats();
     clearPieces();
     m_desk = {};
     m_eval = {};
@@ -507,6 +754,8 @@ void Game::toMenu() {
 
 void Game::shutdown() {
     save();
+    if (!m_judged.isEmpty())
+        m_stats.save();
     clearPieces();
     m_poll.stop();
     m_tick.stop();
@@ -516,6 +765,7 @@ void Game::hint() {
     if (m_state != "playing")
         return;
     m_askedTier = std::min(3, std::max(m_askedTier, m_hintTier) + 1);
+    m_helpAsked = true;
     updateHints();
 }
 
@@ -940,7 +1190,10 @@ void Game::spawn(const QString &id) {
     // as it opens, before checking its process id.
     row.title = QString("Tessera · %1").arg(pieceName(id));
     row.label = pieceName(id);
-    row.image = Art::image(p->art);
+    if (const auto *prep = preparedFor(p->art)) {
+        row.image = prep->url();
+        row.imageSize = prep->size;
+    }
     row.cell = p->cell;
     m_titles.insert(id, row.title);
     m_pending = id;
@@ -996,12 +1249,84 @@ void Game::bindFromClients() {
 
 void Game::startPlaying() {
     m_started = m_now();
-    m_hintTier = m_level.lesson ? 0 : 2;
+    // Practice holds the keys back a moment, as lessons do, so a move can be
+    // made unaided; the timed puzzles show them at once.
+    m_hintTier = m_level.lesson ? 0 : m_practice ? 1 : 2;
     m_askedTier = 0;
-    m_objective = m_level.lesson ? intro() : tr("Put every picture together, one on each workspace.");
+    m_objective = m_level.lesson || m_practice ? intro() : tr("Put every picture together, one on each workspace.");
     m_objectiveChord.clear();
+    m_judged.clear();
+    m_runMoves = m_runLooks = 0;
+    m_par = Levels::par(m_level, m_area);
+    m_helpAsked = false;
+    m_hintKey.clear();
+    m_situationSince = m_lastMoveAt = m_started;
     setState("playing");
+    refresh();
+    m_eval = Puzzle::evaluate(m_desk);
+    // What's on the desktop now is where the player starts; the echoes of
+    // dealing that may still be on their way are the game's own.
+    m_detector.reset(snapshot(), m_now());
+    m_detector.suppress(m_now() + 200);
     evaluate();
+}
+
+QSizeF Game::screenArea() {
+    refresh();
+    const auto monitors = m_hyprctl->query("monitors").toArray();
+    const int id = client(m_board).value("monitor").toInt(-1);
+    QJsonObject monitor;
+    for (const auto &value : monitors) {
+        const auto m = value.toObject();
+        if (m.value("id").toInt(-2) == id || (monitor.isEmpty() && m.value("focused").toBool()))
+            monitor = m;
+    }
+    if (monitor.isEmpty() && !monitors.isEmpty())
+        monitor = monitors.first().toObject();
+    m_scale = monitor.value("scale").toDouble(1);
+    const QSizeF area = Collage::area(monitor);
+    m_area = area.isEmpty() ? QSizeF(1920, 1054) : area;
+    return m_area;
+}
+
+Commands::Snapshot Game::snapshot() {
+    Commands::Snapshot s;
+    s.desk = m_desk;
+    for (const auto &row : m_pieces.rows())
+        if (!row.address.isEmpty())
+            s.pieceByAddress.insert(row.address, row.id);
+    const QJsonObject cursor = m_hyprctl->query("cursorpos").toObject();
+    if (cursor.contains("x") && cursor.contains("y")) {
+        s.cursor = QPointF(cursor.value("x").toDouble(), cursor.value("y").toDouble());
+        s.cursorKnown = true;
+    }
+    s.valid = true;
+    return s;
+}
+
+void Game::judge(const Commands::Move &move, const Commands::Situation &before, const Commands::Situation &after) {
+    if (move.family.isEmpty())
+        return;
+    const Commands::Verdict verdict = Commands::judge(move, before, after);
+    const Hints::Hint *wanted = Commands::recommendation(before.hints);
+    // Aided: its keys were on screen for exactly this move, or the player
+    // asked for help since the last one.
+    const bool shown = wanted && Commands::matches(move, *wanted) && !wanted->chord.isEmpty() && m_hintTier >= 2;
+    const bool aided = shown || m_helpAsked;
+    // From the moment the situation arose: the recommendation appeared, or
+    // the last move was made, whichever is later.
+    const qint64 reaction = std::max<qint64>(0, move.at - std::max(m_situationSince, m_lastMoveAt));
+    m_stats.record(move, verdict, reaction, aided);
+    m_judged << Judged{move, verdict, aided, reaction};
+    const auto *f = Commands::family(move.family);
+    if (f && f->look)
+        ++m_runLooks;
+    else
+        ++m_runMoves;
+    m_lastMoveAt = move.at;
+    m_helpAsked = false;
+    if (m_practice)
+        m_askedTier = 0;
 }
 
 void Game::clearPieces() {
@@ -1025,8 +1350,15 @@ void Game::clearPieces() {
 void Game::evaluate() {
     if (m_state != "playing")
         return;
+    const Commands::Situation before{m_desk, m_eval, m_hints};
     refresh();
     m_eval = Puzzle::evaluate(m_desk);
+    const QList<Commands::Move> moves = m_detector.snapshot(snapshot(), m_now());
+    if (!moves.isEmpty()) {
+        const Commands::Situation after{m_desk, m_eval, {}};
+        for (const auto &move : moves)
+            judge(move, before, after);
+    }
     for (const auto &row : m_pieces.rows())
         m_pieces.update(row.id, row.id == m_desk.focused, m_eval.pieces.value(row.id).inPlace);
     updateHints();
@@ -1039,20 +1371,31 @@ void Game::updateHints() {
     if (m_state != "playing")
         return;
     int tier = m_askedTier;
-    if (m_level.lesson) {
-        const qint64 t = m_now() - m_started;
-        tier = std::max(tier, t >= m_timings.tier3 ? 3 : t >= m_timings.tier2 ? 2 : t >= m_timings.tier1 ? 1 : 0);
-    } else {
-        tier = std::max(tier, 2);
-    }
     const QList<Hints::Hint> before = m_hints;
     const int tierBefore = m_hintTier;
     const QString focusBefore = m_focusedPiece;
-    m_hintTier = std::max(m_hintTier, tier);
     m_hints = Hints::compute(
         m_desk, m_eval, [this](const QString &action) { return chord(action); },
         [this](const QString &id) { return pieceName(id); }, [this](int p) { return pictureTitle(p); });
     m_focusedPiece = m_desk.focused;
+    // A new recommendation is a new situation: reaction times count from it.
+    const Hints::Hint *wanted = Commands::recommendation(m_hints);
+    const QString key = wanted ? wanted->action + '|' + wanted->family + '|' + wanted->piece : QString();
+    if (key != m_hintKey) {
+        m_hintKey = key;
+        m_situationSince = m_now();
+    }
+    if (m_level.lesson) {
+        const qint64 t = m_now() - m_started;
+        tier = std::max(tier, t >= m_timings.tier3 ? 3 : t >= m_timings.tier2 ? 2 : t >= m_timings.tier1 ? 1 : 0);
+        m_hintTier = std::max(m_hintTier, tier);
+    } else if (m_practice) {
+        // The keys for each new situation come after a moment.
+        const qint64 waited = m_now() - std::max(m_situationSince, m_lastMoveAt);
+        m_hintTier = std::max({tier, 1, waited >= m_timings.practiceKeys ? 2 : 1});
+    } else {
+        m_hintTier = std::max({m_hintTier, tier, 2});
+    }
     auto same = [](const QList<Hints::Hint> &a, const QList<Hints::Hint> &b) {
         if (a.size() != b.size())
             return false;
@@ -1075,12 +1418,58 @@ QString Game::boardChord() const {
 
 void Game::finish() {
     m_finished = m_now();
+    Stats::Run run;
+    run.level = m_level.id;
+    run.lesson = m_level.lesson;
+    run.practice = m_practice;
+    run.when = QDateTime::currentMSecsSinceEpoch();
+    run.ms = m_finished - m_started;
+    run.moves = m_runMoves;
+    run.par = m_par;
+    run.looks = m_runLooks;
+    m_stats.addRun(run);
+    // The summary: moves against par, and the kinds of move that went best
+    // and worst this time.
+    QHash<QString, QPair<int, int>> tally; // family -> good, detour
+    for (const auto &j : m_judged) {
+        auto &t = tally[j.move.family];
+        if (j.verdict == Commands::Verdict::Good)
+            ++t.first;
+        else if (j.verdict == Commands::Verdict::Detour)
+            ++t.second;
+    }
+    QString best, worst;
+    double bestScore = -1, worstScore = -1;
+    for (const auto &f : Commands::families()) {
+        const auto t = tally.value(f.id);
+        if (t.first + t.second == 0)
+            continue;
+        const double good = double(t.first) / (t.first + t.second);
+        if (t.first > 0 && (good > bestScore || (good == bestScore && t.first > tally.value(best).first))) {
+            bestScore = good;
+            best = f.id;
+        }
+        if (t.second > 0 && (1 - good > worstScore || (1 - good == worstScore && t.second > tally.value(worst).second))) {
+            worstScore = 1 - good;
+            worst = f.id;
+        }
+    }
+    if (worst == best)
+        worst.clear();
+    m_summary = QVariantMap{{"moves", m_runMoves},
+                            {"par", m_par},
+                            {"looks", m_runLooks},
+                            {"best", best.isEmpty() ? QString() : tr_("Game", Commands::family(best)->name)},
+                            {"bestChord", best.isEmpty() ? QString() : familyChord(best)},
+                            {"worst", worst.isEmpty() ? QString() : tr_("Game", Commands::family(worst)->name)},
+                            {"worstChord", worst.isEmpty() ? QString() : familyChord(worst)}};
+    saveStats();
     if (m_level.lesson) {
         m_stars = m_hintTier <= 1 ? 3 : m_hintTier == 2 ? 2 : 1;
         m_progress.setStars(m_level.id, m_stars);
         m_progress.setCurrent(m_levelIndex + 1 < Levels::lessons().size() ? Levels::lessons().at(m_levelIndex + 1).id
                                                                           : m_level.id);
-    } else {
+    } else if (!m_practice) {
         m_newBest = m_progress.recordTime(m_level.id, m_finished - m_started);
     }
     save();
@@ -1092,6 +1481,10 @@ void Game::finish() {
 // ── Events ────────────────────────────────────────────────────────────────
 
 void Game::handleEvent(const QString &name, const QString &data) {
+    // The detector reads every event first, while the game's own idea of the
+    // desktop still shows what it was before.
+    if (m_state == "playing")
+        m_detector.event(name, data, m_now());
     if (name == "openwindow") {
         const QStringList f = Hypr::fields(data, 4);
         if (!m_pending.isEmpty() && f.at(3) == m_titles.value(m_pending))

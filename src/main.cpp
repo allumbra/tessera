@@ -1,15 +1,20 @@
 // tessera — a jigsaw puzzle you solve with Omarchy's window shortcuts.
 
 #include <QGuiApplication>
+#include <QDir>
 #include <QIcon>
+#include <QStandardPaths>
 #include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickImageProvider>
 #include <QQuickStyle>
 #include <QUrl>
 
 #include "game.h"
+#include "gallery.h"
 #include "hyprland.h"
+#include "portalfilepicker.h"
 #include "theme.h"
 #include "translator.h"
 
@@ -33,7 +38,7 @@ static QString readBindings(QString *problem) {
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     app.setApplicationName("tessera");
-    app.setApplicationVersion("0.1.2");
+    app.setApplicationVersion("0.2.0");
 
     // Matches every window, the board and each piece, to tessera.desktop:
     // the compositor sees the Wayland app id "tessera", and the launcher
@@ -54,6 +59,19 @@ int main(int argc, char *argv[]) {
     HyprlandEvents events;
     Hyprctl hyprctl;
     Game game(&events, &hyprctl, qEnvironmentVariable("TESSERA_PROGRESS"));
+    // Settings beside the progress; downloads and rendered pictures in the
+    // cache. TESSERA_OFFLINE=1 keeps Tessera off the network whatever the
+    // setting says.
+    Gallery::Options galleryOptions;
+    galleryOptions.settingsPath = QDir::homePath() + "/.local/state/tessera/settings.json";
+    galleryOptions.cacheDir = qEnvironmentVariableIsEmpty("TESSERA_CACHE")
+        ? QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/tessera"
+        : qEnvironmentVariable("TESSERA_CACHE");
+    galleryOptions.network = qEnvironmentVariable("TESSERA_OFFLINE") != "1";
+    Gallery gallery(galleryOptions);
+    PortalFilePicker picker;
+    gallery.setPicker(&picker);
+    game.setGallery(&gallery);
     QString problem;
     const QString bindings = readBindings(&problem);
     game.setBindings(bindings, problem);
@@ -67,6 +85,8 @@ int main(int argc, char *argv[]) {
     engine.rootContext()->setContextProperty("translator", &translator);
     engine.rootContext()->setContextProperty("theme", &theme);
     engine.rootContext()->setContextProperty("game", &game);
+    engine.rootContext()->setContextProperty("gallery", &gallery);
+    engine.addImageProvider("tessera", gallery.createImageProvider());
     engine.load(QUrl("qrc:/Main.qml"));
     if (engine.rootObjects().isEmpty())
         return 1;

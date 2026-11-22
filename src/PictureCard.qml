@@ -2,11 +2,14 @@ import QtQuick
 import QtQuick.Layouts
 
 // One picture on the board: what it should look like, how it is cut, which
-// pieces are already in place, and the workspace it belongs on.
+// pieces are already in place, the workspace it belongs on, and who made it.
+// Titles and names come from museums and file names, so they are shown as
+// plain text, never as markup.
 Rectangle {
     id: card
     property var picture: ({})
     readonly property color accent: theme.accent
+    readonly property real aspect: picture.aspect > 0 ? picture.aspect : 16 / 9
 
     implicitHeight: column.implicitHeight + 20
     radius: Math.min(8, theme.radius)
@@ -19,13 +22,18 @@ Rectangle {
         anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
         spacing: 8
 
+        // The picture at the monitor's own shape; a tall one is kept from
+        // taking the whole board.
         Item {
+            id: frame
             Layout.fillWidth: true
-            Layout.preferredHeight: width * 9 / 16
+            Layout.preferredHeight: Math.min(width / card.aspect, 380)
 
             Image {
                 id: thumb
-                anchors.fill: parent
+                anchors.centerIn: parent
+                width: Math.min(parent.width, parent.height * card.aspect)
+                height: width / card.aspect
                 source: card.picture.image || ""
                 fillMode: Image.Stretch
                 sourceSize.width: 640
@@ -36,8 +44,8 @@ Rectangle {
                 model: card.picture.cells || []
                 delegate: Rectangle {
                     required property var modelData
-                    x: modelData.x * thumb.width
-                    y: modelData.y * thumb.height
+                    x: thumb.x + modelData.x * thumb.width
+                    y: thumb.y + modelData.y * thumb.height
                     width: modelData.w * thumb.width
                     height: modelData.h * thumb.height
                     color: modelData.placed ? Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.18) : "transparent"
@@ -56,7 +64,7 @@ Rectangle {
             }
             Rectangle {
                 visible: card.picture.complete === true
-                anchors { right: parent.right; bottom: parent.bottom; margins: 6 }
+                anchors { right: thumb.right; bottom: thumb.bottom; margins: 6 }
                 width: doneText.implicitWidth + 14; height: doneText.implicitHeight + 6
                 radius: Math.min(4, theme.radius)
                 color: card.accent
@@ -67,6 +75,7 @@ Rectangle {
         Text {
             Layout.fillWidth: true
             text: card.picture.title || ""
+            textFormat: Text.PlainText
             color: "#f2f2f2"
             font.pixelSize: 15
             font.weight: Font.DemiBold
@@ -74,7 +83,9 @@ Rectangle {
         }
         Text {
             Layout.fillWidth: true
-            text: (card.picture.artist || "") + (card.picture.year ? " · " + card.picture.year : "")
+            visible: text !== ""
+            text: (card.picture.artist || "") + (card.picture.artist && card.picture.year ? " · " : "") + (card.picture.year || "")
+            textFormat: Text.PlainText
             color: "#8a8a94"
             font.pixelSize: 12
             elide: Text.ElideRight
@@ -99,6 +110,43 @@ Rectangle {
                                       .arg(Number(card.picture.total || 0).toLocaleString(Qt.locale(), 'f', 0))
                 color: "#c8c8d0"
                 font.pixelSize: 13
+            }
+        }
+
+        // Every work in it, with where it's from and on what terms.
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#26262c"; visible: (card.picture.credits || []).length > 0 }
+        Repeater {
+            model: card.picture.credits || []
+            delegate: ColumnLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                spacing: 1
+                Text {
+                    Layout.fillWidth: true
+                    visible: card.picture.collage === true
+                    text: modelData.title + (modelData.artist ? " — " + modelData.artist : "") + (modelData.date ? ", " + modelData.date : "")
+                    textFormat: Text.PlainText
+                    color: "#c8c8d0"
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: [modelData.license, modelData.origin].filter(t => t !== "").join(" · ")
+                    textFormat: Text.PlainText
+                    color: "#7a7a84"
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: modelData.url !== ""
+                    text: modelData.url.replace(/^https:\/\//, "")
+                    textFormat: Text.PlainText
+                    color: "#5e5e68"
+                    font.pixelSize: 10
+                    elide: Text.ElideMiddle
+                }
             }
         }
     }

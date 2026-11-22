@@ -77,6 +77,33 @@ public:
     // A window the game must never touch; any dispatch on it fails the test.
     QSet<QString> untouchable;
     bool touchedForeign = false;
+    // The monitor, as hyprctl -j monitors reports it: panel pixels, scale,
+    // transform and the bar's reserved strip. Tiles fill what's left.
+    int monitorWidth = 1920, monitorHeight = 1080, transform = 0;
+    double scale = 1;
+    QList<int> reserved{0, 26, 0, 0};
+    // Where the pointer is; Hyprland warps it to the middle of a window it
+    // focuses from the keyboard unless a test says otherwise.
+    QPointF cursor{960, 540};
+    bool warps = false;
+
+    // The work area the tiles fill, in logical pixels.
+    QRectF area() const {
+        double w = monitorWidth, h = monitorHeight;
+        if (transform % 2)
+            std::swap(w, h);
+        w /= scale;
+        h /= scale;
+        return QRectF(reserved.at(0), reserved.at(1), w - reserved.at(0) - reserved.at(2), h - reserved.at(1) - reserved.at(3));
+    }
+    // Sets the monitor's shape before anything is tiled.
+    void setMonitor(int width, int height, double s = 1, int t = 0) {
+        monitorWidth = width;
+        monitorHeight = height;
+        scale = s;
+        transform = t;
+        layouts.clear();
+    }
 
     explicit FakeDesktop(QObject *parent = nullptr) : Hyprctl(parent) {}
 
@@ -132,7 +159,7 @@ public:
 
     QString leafOf(const Window &w) const { return w.group.isEmpty() ? w.address : "group:" + w.group; }
     Dwindle &layout(int ws) {
-        return layouts.try_emplace(ws).first->second;
+        return layouts.try_emplace(ws, area()).first->second;
     }
 
     // A window joins a workspace's tiles beside the one focused last there,
@@ -214,6 +241,9 @@ public:
 
     void focus(const QString &address) {
         active = address;
+        if (warps)
+            if (auto *w = find(address))
+                cursor = rectOf(*w).center();
         if (auto *w = find(address)) {
             lastFocused[w->workspace] = address;
             if (!w->group.isEmpty())
@@ -497,8 +527,13 @@ public:
             QJsonObject special{{"id", scratchpadShown ? Scratchpad : 0},
                                 {"name", scratchpadShown ? QString("special:scratchpad") : QString()}};
             return QJsonArray{QJsonObject{{"id", 0}, {"name", "HDMI-A-1"}, {"focused", true}, {"specialWorkspace", special},
-                                          {"activeWorkspace", QJsonObject{{"id", activeWs}}}}};
+                                          {"activeWorkspace", QJsonObject{{"id", activeWs}}},
+                                          {"width", monitorWidth}, {"height", monitorHeight}, {"scale", scale},
+                                          {"transform", transform},
+                                          {"reserved", QJsonArray{reserved.at(0), reserved.at(1), reserved.at(2), reserved.at(3)}}}};
         }
+        if (what == "cursorpos")
+            return QJsonObject{{"x", cursor.x()}, {"y", cursor.y()}};
         if (what == "getoption general:layout")
             return QJsonObject{{"option", "general:layout"}, {"str", layoutName}};
         return {};

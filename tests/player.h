@@ -87,6 +87,9 @@ public:
     // hint that has keys.
     bool step() {
         settle();
+        // Pictures being made, or workspaces being found: nothing to press.
+        if (game.state() == "preparing" || game.state() == "waiting")
+            return true;
         if (game.state() == "dealing") {
             if (!game.objectiveChord().isEmpty())
                 return press(game.objectiveChord());
