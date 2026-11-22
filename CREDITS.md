@@ -1,9 +1,11 @@
 # Credits
 
-Tessera's pictures are all in the public domain. Each one is compiled into
-the binary as a 1600 × 900 JPEG, centre-cropped to 16:9 and downscaled from
-the Wikimedia Commons file named below. The licence of each was checked on
-its Commons file page.
+Tessera's built-in pictures are all in the public domain. Each one is
+compiled into the binary as a 1600 × 900 JPEG, centre-cropped to 16:9 and
+downscaled from the Wikimedia Commons file named below. The licence of each
+was checked on its Commons file page. At play they are cropped or put into
+a collage to fit the monitor's shape; that changes nothing about their
+status.
 
 | Picture | Creator | Date | Source | Licence |
 |---|---|---|---|---|
@@ -15,5 +17,18 @@ its Commons file page.
 
 NASA's use of the image does not imply NASA's endorsement of Tessera.
 
+## Museum art
+
+With online art on, Tessera fetches works the Art Institute of Chicago
+(https://api.artic.edu) and the Metropolitan Museum of Art
+(https://metmuseum.github.io) flag as public domain, which both museums
+release under CC0. Nothing of theirs ships with Tessera; each work's title,
+artist, date, licence and page are shown on the board while it's played and
+kept in `~/.cache/tessera/credits.json`. Using their open-access APIs does
+not imply either museum's endorsement of Tessera.
+
 The app's code is under the MIT License (see `LICENSE`). Its theme watching
 and shape follow Omacut and Monologue by David Heinemeier Hansson, also MIT.
+`src/filepicker.h` and `src/portalfilepicker.{h,cpp}` are adapted from
+Omacut's (https://github.com/omacom-io/omacut, MIT, by David Heinemeier
+Hansson) to choose a folder.

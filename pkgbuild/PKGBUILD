@@ -1,10 +1,11 @@
 pkgname=tessera
-pkgver=0.1.2
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='A jigsaw puzzle you solve with your real Omarchy window shortcuts'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'hyprland')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'hyprland' 'xdg-desktop-portal')
+optdepends=('qt6-imageformats: WebP pictures from your folder')
 makedepends=('gcc' 'make')
 source=()
 sha256sums=()
