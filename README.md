@@ -10,6 +10,19 @@ piece is in the right place at the right size. You put it together with the
 real keys: swap, focus, move to a workspace, toggle the split, resize, float
 and tile, take windows out of a group, the scratchpad.
 
+## Install
+
+On Omarchy, paste this into a terminal:
+
+```sh
+sudo pacman -U https://github.com/allumbra/tessera/releases/download/v0.2.1/tessera-0.2.1-1-x86_64.pkg.tar.zst
+```
+
+Then open **Tessera** from the app launcher (Super + Space). To remove it,
+run `sudo pacman -R tessera`. Newer versions are on the
+[releases page](https://github.com/allumbra/tessera/releases), and an AUR
+package is on the way. To build it yourself, see [Building](#building).
+
 ![The pieces of The Starry Night tiled on a workspace, one of them focused with its hint](docs/pieces.jpg)
 
 ## Playing
